@@ -45,6 +45,9 @@ stages:
           - script: dotnet restore KalshiIntegrationSandbox.sln
             displayName: Restore .NET solution
 
+          - script: dotnet format KalshiIntegrationSandbox.sln --verify-no-changes --no-restore
+            displayName: Verify .NET formatting
+
           - script: dotnet build KalshiIntegrationSandbox.sln --configuration $(BuildConfiguration) --no-restore
             displayName: Build .NET solution
 

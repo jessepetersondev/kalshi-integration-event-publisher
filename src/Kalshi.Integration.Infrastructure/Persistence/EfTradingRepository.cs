@@ -12,6 +12,18 @@ namespace Kalshi.Integration.Infrastructure.Persistence;
 
 public sealed class EfTradingRepository : ITradingRepository
 {
+    private static readonly Action<ILogger, string, string, double, Exception?> DependencyCallSucceeded =
+        LoggerMessage.Define<string, string, double>(
+            LogLevel.Information,
+            new EventId(1100, nameof(DependencyCallSucceeded)),
+            "Dependency call {Dependency} {Operation} succeeded in {ElapsedMs} ms.");
+
+    private static readonly Action<ILogger, string, string, double, Exception?> DependencyCallFailed =
+        LoggerMessage.Define<string, string, double>(
+            LogLevel.Error,
+            new EventId(1101, nameof(DependencyCallFailed)),
+            "Dependency call {Dependency} {Operation} failed after {ElapsedMs} ms.");
+
     private readonly KalshiIntegrationDbContext _dbContext;
     private readonly ILogger<EfTradingRepository> _logger;
 
@@ -180,22 +192,23 @@ public sealed class EfTradingRepository : ITradingRepository
             await action();
             stopwatch.Stop();
 
-            _logger.LogInformation(
-                "Dependency call {Dependency} {Operation} succeeded in {ElapsedMs} ms.",
+            DependencyCallSucceeded(
+                _logger,
                 "sqlite",
                 operation,
-                stopwatch.Elapsed.TotalMilliseconds);
+                stopwatch.Elapsed.TotalMilliseconds,
+                null);
         }
         catch (Exception exception)
         {
             stopwatch.Stop();
 
-            _logger.LogError(
-                exception,
-                "Dependency call {Dependency} {Operation} failed after {ElapsedMs} ms.",
+            DependencyCallFailed(
+                _logger,
                 "sqlite",
                 operation,
-                stopwatch.Elapsed.TotalMilliseconds);
+                stopwatch.Elapsed.TotalMilliseconds,
+                exception);
 
             throw;
         }
@@ -210,11 +223,12 @@ public sealed class EfTradingRepository : ITradingRepository
             var result = await action();
             stopwatch.Stop();
 
-            _logger.LogInformation(
-                "Dependency call {Dependency} {Operation} succeeded in {ElapsedMs} ms.",
+            DependencyCallSucceeded(
+                _logger,
                 "sqlite",
                 operation,
-                stopwatch.Elapsed.TotalMilliseconds);
+                stopwatch.Elapsed.TotalMilliseconds,
+                null);
 
             return result;
         }
@@ -222,12 +236,12 @@ public sealed class EfTradingRepository : ITradingRepository
         {
             stopwatch.Stop();
 
-            _logger.LogError(
-                exception,
-                "Dependency call {Dependency} {Operation} failed after {ElapsedMs} ms.",
+            DependencyCallFailed(
+                _logger,
                 "sqlite",
                 operation,
-                stopwatch.Elapsed.TotalMilliseconds);
+                stopwatch.Elapsed.TotalMilliseconds,
+                exception);
 
             throw;
         }

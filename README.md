@@ -49,6 +49,9 @@ Dependency direction follows clean architecture / SOLID principles:
 - JPC-1542: integration test coverage for API and persistence flows
 - JPC-1543: acceptance tests for end-to-end demo flows
 - JPC-1550: Azure DevOps pipeline for build, test, and coverage reporting
+- JPC-1551: RabbitMQ publisher adapter behind `IApplicationEventPublisher`
+- JPC-1552: stricter .NET build baseline with central package management, analyzers, and format verification
+- JPC-1553: checked-in EF Core migrations with startup migration application
 
 ## Risk validation
 
@@ -76,7 +79,18 @@ Local configuration lives in:
 - `src/Kalshi.Integration.Api/appsettings.json`
 - `src/Kalshi.Integration.Api/appsettings.Development.json`
 
-Note: the environment here does not have `dotnet-ef` installed globally, so schema creation is currently bootstrapped through `Database.EnsureCreated()` at startup rather than checked-in EF migrations.
+Schema changes are now tracked through checked-in EF Core migrations under:
+- `src/Kalshi.Integration.Infrastructure/Persistence/Migrations/`
+
+The API applies migrations on startup through `Database.Migrate()` when:
+- `Database:ApplyMigrationsOnStartup=true`
+
+For local CLI migration work, the repo includes a local tool manifest for `dotnet-ef`:
+
+```bash
+dotnet tool restore
+dotnet ef database update --project src/Kalshi.Integration.Infrastructure --startup-project src/Kalshi.Integration.Api
+```
 
 ## Testing
 
@@ -88,12 +102,28 @@ The sandbox now uses three dedicated test projects:
 See:
 - `tests/README.md`
 
+Repo-wide code quality is enforced through:
+- `Directory.Build.props`
+- `Directory.Build.targets`
+- `Directory.Packages.props`
+- `.editorconfig`
+
+Local verification commands:
+
+```bash
+dotnet format KalshiIntegrationSandbox.sln --verify-no-changes
+dotnet build KalshiIntegrationSandbox.sln
+dotnet test KalshiIntegrationSandbox.sln
+```
+
 ## Azure DevOps CI
 
 The repo now includes an Azure DevOps pipeline at `azure-pipelines.yml`.
 
 The pipeline is designed to:
-- restore and build the .NET solution
+- restore the .NET solution
+- verify formatting with `dotnet format --verify-no-changes`
+- build the .NET solution
 - run all .NET tests in the solution
 - run the Node gateway test suite
 - publish .NET test results
@@ -104,20 +134,21 @@ The published unit coverage summary comes from:
 
 ## Event publishing
 
-The sandbox now includes a transport-agnostic application event publisher seam.
+The sandbox includes a transport-agnostic application event publisher seam with two infrastructure implementations:
 
-Key pieces:
 - `IApplicationEventPublisher` in the application boundary
 - `ApplicationEventEnvelope` as the neutral event contract
-- `InMemoryApplicationEventPublisher` for current in-process publication and tests
+- `InMemoryApplicationEventPublisher` for local/default in-process publication and tests
+- `RabbitMqApplicationEventPublisher` for broker-backed publishing when enabled via configuration
 
 Current published events include:
 - `trade-intent.created`
 - `order.created`
 - `execution-update.applied`
 
-This is intentionally **not** a broker integration yet.
-The current goal is to demonstrate the seam cleanly without prematurely introducing RabbitMQ or Azure Service Bus.
+Provider selection is configuration-driven:
+- `EventPublishing:Provider=InMemory` → default local publisher
+- `EventPublishing:Provider=RabbitMq` → publishes serialized application events to the configured RabbitMQ exchange with correlation/idempotency metadata mapped into headers
 
 See:
 - `docs/event-publishing.md`

@@ -4,18 +4,23 @@ The sandbox now has a **clean application-boundary publishing abstraction** for 
 
 - `IApplicationEventPublisher` lives in `Kalshi.Integration.Application`
 - `ApplicationEventEnvelope` defines the transport-agnostic event contract
-- `InMemoryApplicationEventPublisher` is the current MVP implementation for in-process publication and tests
+- `InMemoryApplicationEventPublisher` supports the default in-process MVP path
+- `RabbitMqApplicationEventPublisher` provides a broker-backed adapter behind the same application interface
 
-## Current MVP behavior
+## Current behavior
 
-The current implementation is intentionally small:
+The implementation now supports two publish modes selected via configuration:
 
-- successful API workflows publish application events in-process
-- the in-memory publisher keeps a local event history for inspection
-- tests can subscribe to events directly without a broker
-- no RabbitMQ / Azure Service Bus dependency is added yet
+- `EventPublishing:Provider=InMemory`
+  - successful API workflows publish application events in-process
+  - the in-memory publisher keeps a local event history for inspection
+  - tests can subscribe to events directly without a broker
+- `EventPublishing:Provider=RabbitMq`
+  - successful API workflows publish serialized `ApplicationEventEnvelope` messages to RabbitMQ
+  - the adapter declares the configured exchange before publishing
+  - correlation/idempotency/resource metadata is mapped into RabbitMQ headers and message properties
 
-This keeps the portfolio project simple while still showing the correct extension seam.
+This keeps the application boundary clean while still demonstrating a real broker adapter.
 
 ## Publisher responsibilities
 
@@ -48,33 +53,32 @@ Those concerns stay in the appropriate layer.
 - string-based attributes
 - occurred-at timestamp
 
-The envelope is intentionally generic so a future broker adapter can serialize it without pushing broker concepts into the application layer.
+The envelope stays generic so concrete broker adapters can serialize it without pushing broker concepts into the application layer.
 
-## RabbitMQ / Azure Service Bus future path
+## RabbitMQ adapter details
 
-If this sandbox later needs real asynchronous messaging, keep the application contract unchanged and add a new infrastructure implementation:
+`RabbitMqApplicationEventPublisher` currently:
 
-- `RabbitMqApplicationEventPublisher`
+- uses `RabbitMqOptions` from configuration
+- publishes to a durable topic exchange
+- builds routing keys from `{RoutingKeyPrefix}.{Category}.{EventName}`
+- normalizes event names such as `order.created` and `execution-update.applied`
+- writes message headers for:
+  - `event-id`
+  - `category`
+  - `event-name`
+  - `occurred-at`
+  - `resource-id` when present
+  - `correlation-id` when present
+  - `idempotency-key` when present
+  - `attribute:*` for envelope attributes
+
+Default configuration lives in `src/Kalshi.Integration.Api/appsettings.json`.
+
+## Future path
+
+If this sandbox later needs Azure-specific messaging signal, keep the application contract unchanged and add another infrastructure implementation such as:
+
 - `AzureServiceBusApplicationEventPublisher`
 
-Those adapters would be responsible for:
-
-- mapping `ApplicationEventEnvelope` to broker messages
-- choosing exchange / queue / topic names
-- adding broker headers from correlation/idempotency metadata
-- serialization
-- publish retries / transient fault handling
-- delivery telemetry
-
-The application layer should still only know about `IApplicationEventPublisher`.
-
-## Why no broker yet?
-
-The current stories only require:
-
-- a clean abstraction
-- an in-memory implementation for MVP use
-- easy testability
-- documentation for the extension path
-
-Adding RabbitMQ or Azure Service Bus now would be premature and would increase setup, infrastructure, and failure modes without improving the portfolio signal for this stage.
+That adapter should follow the same pattern: map `ApplicationEventEnvelope` into broker-native messages without leaking broker concepts into the application layer.

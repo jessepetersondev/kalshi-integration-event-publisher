@@ -1,3 +1,4 @@
+using System.Globalization;
 using Asp.Versioning;
 using Kalshi.Integration.Api.Infrastructure;
 using Kalshi.Integration.Application.Abstractions;
@@ -124,7 +125,7 @@ public sealed class TradeIntentsController : ControllerBase
                     {
                         ["ticker"] = response.Ticker,
                         ["side"] = response.Side,
-                        ["quantity"] = response.Quantity.ToString(),
+                        ["quantity"] = response.Quantity.ToString(CultureInfo.InvariantCulture),
                         ["strategyName"] = response.StrategyName,
                     }),
                 cancellationToken);

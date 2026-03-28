@@ -40,6 +40,12 @@ dotnet test tests/Kalshi.Integration.IntegrationTests/Kalshi.Integration.Integra
 dotnet test tests/Kalshi.Integration.AcceptanceTests/Kalshi.Integration.AcceptanceTests.csproj
 ```
 
+Before running the broader build, verify repo formatting with:
+
+```bash
+dotnet format KalshiIntegrationSandbox.sln --verify-no-changes
+```
+
 ### Unit coverage gate
 
 The unit test project collects coverage automatically and fails below the configured threshold.
@@ -53,6 +59,6 @@ tests/Kalshi.Integration.UnitTests/TestResults/Coverage/coverage.cobertura.xml
 ## Test setup notes
 
 - API-hosted tests use `WebApplicationFactory<Program>`.
-- The app bootstraps the local SQLite database with `Database.EnsureCreated()` at startup.
+- The app applies checked-in EF Core migrations with `Database.Migrate()` at startup.
 - Integration and acceptance tests override the connection string to an isolated temporary SQLite file so test/demo data never pollutes the local dashboard database.
 - Integration and acceptance tests should prefer unique tickers/correlation ids to avoid cross-test state collisions.

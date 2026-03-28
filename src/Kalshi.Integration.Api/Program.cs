@@ -2,7 +2,9 @@ using Asp.Versioning;
 using Kalshi.Integration.Api.Infrastructure;
 using Kalshi.Integration.Application;
 using Kalshi.Integration.Infrastructure;
+using Kalshi.Integration.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,11 +32,13 @@ builder.Services.AddApiVersioning(options =>
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true);
 
-using (var scope = app.Services.CreateScope())
+if (applyMigrationsOnStartup)
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<Kalshi.Integration.Infrastructure.Persistence.KalshiIntegrationDbContext>();
-    dbContext.Database.EnsureCreated();
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+    await dbContext.Database.MigrateAsync();
 }
 
 app.UseExceptionHandler();

@@ -5,8 +5,8 @@ namespace Kalshi.Integration.Domain.Orders;
 
 public sealed class Order
 {
-    private static readonly IReadOnlyDictionary<OrderStatus, OrderStatus[]> AllowedTransitions =
-        new Dictionary<OrderStatus, OrderStatus[]>
+    private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedTransitions =
+        new()
         {
             [OrderStatus.Pending] = new[] { OrderStatus.Accepted, OrderStatus.Rejected, OrderStatus.Canceled },
             [OrderStatus.Accepted] = new[] { OrderStatus.Resting, OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Rejected },

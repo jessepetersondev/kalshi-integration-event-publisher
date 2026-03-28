@@ -5,6 +5,7 @@ using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Risk;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Infrastructure;
+using Kalshi.Integration.Infrastructure.Messaging;
 using Kalshi.Integration.Infrastructure.Operations;
 using Kalshi.Integration.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Moq;
+using RabbitMQ.Client;
 
 namespace Kalshi.Integration.UnitTests;
 
@@ -78,6 +80,37 @@ public sealed class DependencyInjectionTests
             var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
             var concretePublisher = provider.GetRequiredService<InMemoryApplicationEventPublisher>();
             Assert.Same(concretePublisher, publisher);
+        }
+
+        if (File.Exists(databasePath))
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldResolveRabbitMqPublisher_WhenConfigured()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var databasePath = Path.Combine(Path.GetTempPath(), $"kalshi-di-rabbit-{Guid.NewGuid():N}.db");
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:KalshiIntegration"] = $"Data Source={databasePath}",
+                [$"{EventPublisherOptions.SectionName}:Provider"] = EventPublisherProviders.RabbitMq,
+                [$"{RabbitMqOptions.SectionName}:HostName"] = "localhost",
+            })
+            .Build();
+
+        services.AddInfrastructure(configuration);
+
+        using (var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        {
+            var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
+            Assert.IsType<RabbitMqApplicationEventPublisher>(publisher);
+            Assert.NotNull(provider.GetRequiredService<IConnectionFactory>());
         }
 
         if (File.Exists(databasePath))

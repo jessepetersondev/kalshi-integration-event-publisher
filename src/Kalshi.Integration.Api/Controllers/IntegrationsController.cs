@@ -1,3 +1,4 @@
+using System.Globalization;
 using Asp.Versioning;
 using Kalshi.Integration.Api.Infrastructure;
 using Kalshi.Integration.Application.Abstractions;
@@ -50,7 +51,7 @@ public sealed class IntegrationsController : ControllerBase
         var correlationId = RequestMetadata.ResolveCorrelationId(HttpContext, request.CorrelationId);
         var inboundReplayKey = !string.IsNullOrWhiteSpace(request.CorrelationId)
             ? request.CorrelationId
-            : $"{request.OrderId:N}:{request.Status.Trim().ToLowerInvariant()}:{request.FilledQuantity}:{request.OccurredAt?.ToUniversalTime().ToUnixTimeMilliseconds().ToString() ?? "none"}";
+            : $"{request.OrderId:N}:{request.Status.Trim().ToLowerInvariant()}:{request.FilledQuantity.ToString(CultureInfo.InvariantCulture)}:{request.OccurredAt?.ToUniversalTime().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "none"}";
         var idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext, inboundReplayKey);
 
         using var scope = _logger.BeginScope(new Dictionary<string, object?>
@@ -137,7 +138,7 @@ public sealed class IntegrationsController : ControllerBase
                     {
                         ["orderId"] = result.OrderId.ToString(),
                         ["status"] = result.Status,
-                        ["filledQuantity"] = result.FilledQuantity.ToString(),
+                        ["filledQuantity"] = result.FilledQuantity.ToString(CultureInfo.InvariantCulture),
                         ["occurredAt"] = result.OccurredAt.ToString("O"),
                     }),
                 cancellationToken);
