@@ -48,10 +48,10 @@ public sealed class EfTradingRepositoryTests
 
         Assert.Contains(logger.Entries, entry =>
             entry.Level == LogLevel.Information
-            && entry.Message.Contains("Dependency call sqlite trade-intents.insert succeeded", StringComparison.Ordinal));
+            && entry.Message.Contains("Dependency call database trade-intents.insert succeeded", StringComparison.Ordinal));
 
         Assert.Contains(logger.Entries, entry =>
             entry.Level == LogLevel.Information
-            && entry.Message.Contains("Dependency call sqlite orders.get-by-id succeeded", StringComparison.Ordinal));
+            && entry.Message.Contains("Dependency call database orders.get-by-id succeeded", StringComparison.Ordinal));
     }
 }

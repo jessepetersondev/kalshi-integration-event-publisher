@@ -8,6 +8,7 @@ using Kalshi.Integration.Infrastructure;
 using Kalshi.Integration.Infrastructure.Messaging;
 using Kalshi.Integration.Infrastructure.Operations;
 using Kalshi.Integration.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -74,7 +75,14 @@ public sealed class DependencyInjectionTests
             Assert.IsType<InMemoryOperationalIssueStore>(provider.GetRequiredService<IOperationalIssueStore>());
             Assert.IsType<InMemoryAuditRecordStore>(provider.GetRequiredService<IAuditRecordStore>());
             Assert.IsType<InMemoryIdempotencyStore>(provider.GetRequiredService<IIdempotencyStore>());
-            Assert.NotNull(scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>());
+
+            var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+            var databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+
+            Assert.NotNull(dbContext);
+            Assert.Contains("Sqlite", dbContext.Database.ProviderName, StringComparison.Ordinal);
+            Assert.Equal(DatabaseProviders.Sqlite, databaseOptions.Provider);
+            Assert.True(databaseOptions.ApplyMigrationsOnStartup);
             Assert.NotNull(provider.GetRequiredService<HealthCheckService>());
 
             var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
@@ -86,6 +94,34 @@ public sealed class DependencyInjectionTests
         {
             File.Delete(databasePath);
         }
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldUseSqlServerProvider_WhenConfigured()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:KalshiIntegration"] = "Server=tcp:kalshi-sql.database.windows.net,1433;Initial Catalog=KalshiIntegrationSandbox;User ID=kalshi;Password=StrongPassword!123;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",
+                ["Database:Provider"] = "AzureSql",
+                ["Database:ApplyMigrationsOnStartup"] = "false",
+            })
+            .Build();
+
+        services.AddInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+        var databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+
+        Assert.Contains("SqlServer", dbContext.Database.ProviderName, StringComparison.Ordinal);
+        Assert.Equal(DatabaseProviders.SqlServer, databaseOptions.Provider);
+        Assert.False(databaseOptions.ApplyMigrationsOnStartup);
     }
 
     [Fact]

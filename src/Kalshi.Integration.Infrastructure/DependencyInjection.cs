@@ -15,12 +15,22 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("KalshiIntegration") ?? "Data Source=kalshi-integration-sandbox.db";
+        var normalizedProvider = DatabaseProviders.Normalize(configuration.GetValue<string>($"{DatabaseOptions.SectionName}:Provider"));
+        var applyMigrationsOnStartup = configuration.GetValue($"{DatabaseOptions.SectionName}:ApplyMigrationsOnStartup", true);
+        var connectionString = configuration.GetConnectionString("KalshiIntegration")
+            ?? (normalizedProvider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-sandbox.db" : null);
 
+        DatabaseProviders.EnsureConnectionString(connectionString);
+
+        services.Configure<DatabaseOptions>(options =>
+        {
+            options.Provider = normalizedProvider;
+            options.ApplyMigrationsOnStartup = applyMigrationsOnStartup;
+        });
         services.Configure<EventPublisherOptions>(configuration.GetSection(EventPublisherOptions.SectionName));
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
 
-        services.AddDbContext<KalshiIntegrationDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContext<KalshiIntegrationDbContext>(options => ConfigureDatabaseProvider(options, normalizedProvider, connectionString!));
         services.AddScoped<ITradingRepository, EfTradingRepository>();
         services.AddSingleton<IOperationalIssueStore, InMemoryOperationalIssueStore>();
         services.AddSingleton<IAuditRecordStore, InMemoryAuditRecordStore>();
@@ -43,6 +53,24 @@ public static class DependencyInjection
         return string.Equals(options.Provider, EventPublisherProviders.RabbitMq, StringComparison.OrdinalIgnoreCase)
             ? serviceProvider.GetRequiredService<RabbitMqApplicationEventPublisher>()
             : serviceProvider.GetRequiredService<InMemoryApplicationEventPublisher>();
+    }
+
+    private static void ConfigureDatabaseProvider(DbContextOptionsBuilder options, string provider, string connectionString)
+    {
+        switch (provider)
+        {
+            case DatabaseProviders.Sqlite:
+                options.UseSqlite(connectionString);
+                break;
+            case DatabaseProviders.SqlServer:
+                options.UseSqlServer(connectionString, sqlServerOptions =>
+                {
+                    sqlServerOptions.EnableRetryOnFailure();
+                });
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported database provider '{provider}'.");
+        }
     }
 
     private static ConnectionFactory CreateRabbitMqConnectionFactory(RabbitMqOptions options)

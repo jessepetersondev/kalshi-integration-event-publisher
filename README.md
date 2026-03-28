@@ -52,6 +52,7 @@ Dependency direction follows clean architecture / SOLID principles:
 - JPC-1551: RabbitMQ publisher adapter behind `IApplicationEventPublisher`
 - JPC-1552: stricter .NET build baseline with central package management, analyzers, and format verification
 - JPC-1553: checked-in EF Core migrations with startup migration application
+- JPC-1554: SQL Server / Azure SQL provider support while keeping SQLite as the clean local default
 
 ## Risk validation
 
@@ -65,7 +66,13 @@ Configuration lives under the `Risk` section in appsettings.
 
 ## Persistence
 
-The app now uses **EF Core + SQLite** for local persistence.
+The sandbox now supports **EF Core with either SQLite or SQL Server / Azure SQL**.
+
+### Current provider story
+
+- **SQLite** remains the default local-development provider
+- **SQL Server / Azure SQL** is supported through provider selection/configuration
+- the local/test workflow stays simple because you can still run the app without provisioning external infrastructure
 
 The dashboard itself is **real-data only**: no seeded rows are injected into the UI. Test projects override the connection string to isolated temporary SQLite files so automated tests do not pollute the local operator dashboard database.
 
@@ -75,22 +82,36 @@ Tables covered by the current schema:
 - `OrderEvents`
 - `PositionSnapshots`
 
-Local configuration lives in:
+Configuration lives in:
 - `src/Kalshi.Integration.Api/appsettings.json`
 - `src/Kalshi.Integration.Api/appsettings.Development.json`
 
-Schema changes are now tracked through checked-in EF Core migrations under:
+Key settings:
+- `Database:Provider=Sqlite` → default local provider
+- `Database:Provider=SqlServer` → SQL Server / Azure SQL provider
+- `Database:Provider=AzureSql` → accepted alias for SQL Server provider
+- `ConnectionStrings:KalshiIntegration` → active database connection string
+- `Database:ApplyMigrationsOnStartup=true` → apply checked-in EF Core migrations at app startup
+
+Schema changes are tracked through checked-in EF Core migrations under:
 - `src/Kalshi.Integration.Infrastructure/Persistence/Migrations/`
 
-The API applies migrations on startup through `Database.Migrate()` when:
-- `Database:ApplyMigrationsOnStartup=true`
+The design-time `KalshiIntegrationDbContextFactory` now reads appsettings, environment variables, and command-line overrides so `dotnet ef` can target either provider.
 
-For local CLI migration work, the repo includes a local tool manifest for `dotnet-ef`:
+For migration / database update work, the repo includes a local tool manifest for `dotnet-ef`:
 
 ```bash
 dotnet tool restore
-dotnet ef database update --project src/Kalshi.Integration.Infrastructure --startup-project src/Kalshi.Integration.Api
+
+dotnet ef database update \
+  --project src/Kalshi.Integration.Infrastructure \
+  --startup-project src/Kalshi.Integration.Api
 ```
+
+For SQL Server / Azure SQL, set the provider + connection string first, then run the same EF command.
+
+Examples and connection-string guidance live in:
+- `docs/database-providers.md`
 
 ## Testing
 
@@ -157,7 +178,7 @@ See:
 
 Health endpoints:
 - `/health/live` → process liveness
-- `/health/ready` → readiness including SQLite connectivity
+- `/health/ready` → readiness including connectivity to the configured database provider
 
 Verification steps:
 
@@ -172,18 +193,25 @@ curl -s http://localhost:5000/health/ready
 Expected behavior:
 - liveness returns **Healthy** with the `self` check
 - readiness returns **Healthy** only when the `database` dependency check succeeds
+- readiness messages reflect the active provider (for example SQLite vs SQL Server / Azure SQL)
 
 Observability notes:
 - request timing is logged for every HTTP request
-- SQLite dependency calls are logged with operation names and durations
+- database dependency calls are logged with operation names and durations
+- provider-aware dependency names are emitted in logs (`sqlite`, `sqlserver`, or `database`)
 - request failure logs include method, path, elapsed time, correlation id, and trace id
 
 ## Run
+
+Default local run (SQLite):
 
 ```bash
 cd src/Kalshi.Integration.Api
 dotnet run
 ```
+
+If you want to run against SQL Server / Azure SQL instead, set `Database__Provider=SqlServer` and `ConnectionStrings__KalshiIntegration` first. See:
+- `docs/database-providers.md`
 
 Then open:
 - `/swagger`

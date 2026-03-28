@@ -59,6 +59,8 @@ tests/Kalshi.Integration.UnitTests/TestResults/Coverage/coverage.cobertura.xml
 ## Test setup notes
 
 - API-hosted tests use `WebApplicationFactory<Program>`.
-- The app applies checked-in EF Core migrations with `Database.Migrate()` at startup.
-- Integration and acceptance tests override the connection string to an isolated temporary SQLite file so test/demo data never pollutes the local dashboard database.
+- The production app applies checked-in EF Core migrations with `Database.Migrate()` at startup.
+- Integration and acceptance tests explicitly force `Database:Provider=Sqlite` with isolated temporary SQLite files so test/demo data never pollutes the local dashboard database.
+- Those API-hosted test factories apply migrations during host creation and disable startup auto-migration to keep test startup deterministic.
+- Unit tests now include provider-selection coverage for both SQLite and SQL Server / Azure SQL-style configuration.
 - Integration and acceptance tests should prefer unique tickers/correlation ids to avoid cross-test state collisions.

@@ -1,6 +1,10 @@
+using Kalshi.Integration.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Kalshi.Integration.AcceptanceTests;
 
@@ -15,9 +19,25 @@ public sealed class AcceptanceTestWebApplicationFactory : WebApplicationFactory<
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:KalshiIntegration"] = $"Data Source={_databasePath}"
+                ["ConnectionStrings:KalshiIntegration"] = $"Data Source={_databasePath}",
+                ["Database:Provider"] = "Sqlite",
+                ["Database:ApplyMigrationsOnStartup"] = "false",
             });
         });
+    }
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        EnsureDatabaseDirectory();
+
+        var host = base.CreateHost(builder);
+
+        using var scope = host.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+        dbContext.Database.EnsureDeleted();
+        dbContext.Database.Migrate();
+
+        return host;
     }
 
     protected override void Dispose(bool disposing)
@@ -36,6 +56,15 @@ public sealed class AcceptanceTestWebApplicationFactory : WebApplicationFactory<
     {
         await base.DisposeAsync();
         TryDeleteDatabase();
+    }
+
+    private void EnsureDatabaseDirectory()
+    {
+        var directory = Path.GetDirectoryName(_databasePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
     }
 
     private void TryDeleteDatabase()

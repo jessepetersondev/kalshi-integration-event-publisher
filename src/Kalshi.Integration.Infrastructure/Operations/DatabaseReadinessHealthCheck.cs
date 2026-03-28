@@ -32,6 +32,7 @@ public sealed class DatabaseReadinessHealthCheck : IHealthCheck
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+        var dependencyName = DatabaseProviders.GetDependencyName(_dbContext.Database.ProviderName);
 
         try
         {
@@ -40,27 +41,27 @@ public sealed class DatabaseReadinessHealthCheck : IHealthCheck
 
             DependencyCheckCompleted(
                 _logger,
-                "sqlite",
+                dependencyName,
                 "database.readiness",
                 canConnect,
                 stopwatch.Elapsed.TotalMilliseconds,
                 null);
 
             return canConnect
-                ? HealthCheckResult.Healthy("SQLite connectivity verified.")
-                : HealthCheckResult.Unhealthy("SQLite connectivity check failed.");
+                ? HealthCheckResult.Healthy(DatabaseProviders.GetHealthDescription(_dbContext.Database.ProviderName, canConnect))
+                : HealthCheckResult.Unhealthy(DatabaseProviders.GetHealthDescription(_dbContext.Database.ProviderName, canConnect));
         }
         catch (Exception exception)
         {
             stopwatch.Stop();
             DependencyCheckFailed(
                 _logger,
-                "sqlite",
+                dependencyName,
                 "database.readiness",
                 stopwatch.Elapsed.TotalMilliseconds,
                 exception);
 
-            return HealthCheckResult.Unhealthy("SQLite readiness check threw an exception.", exception);
+            return HealthCheckResult.Unhealthy($"{DatabaseProviders.GetHealthDescription(_dbContext.Database.ProviderName, false).TrimEnd('.')} due to exception.", exception);
         }
     }
 }

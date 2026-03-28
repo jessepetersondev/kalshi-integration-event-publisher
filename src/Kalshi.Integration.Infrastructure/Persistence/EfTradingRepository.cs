@@ -186,6 +186,7 @@ public sealed class EfTradingRepository : ITradingRepository
     private async Task ExecuteDependencyCallAsync(string operation, Func<Task> action)
     {
         var stopwatch = Stopwatch.StartNew();
+        var dependencyName = GetDependencyName();
 
         try
         {
@@ -194,7 +195,7 @@ public sealed class EfTradingRepository : ITradingRepository
 
             DependencyCallSucceeded(
                 _logger,
-                "sqlite",
+                dependencyName,
                 operation,
                 stopwatch.Elapsed.TotalMilliseconds,
                 null);
@@ -205,7 +206,7 @@ public sealed class EfTradingRepository : ITradingRepository
 
             DependencyCallFailed(
                 _logger,
-                "sqlite",
+                dependencyName,
                 operation,
                 stopwatch.Elapsed.TotalMilliseconds,
                 exception);
@@ -217,6 +218,7 @@ public sealed class EfTradingRepository : ITradingRepository
     private async Task<T> ExecuteDependencyCallAsync<T>(string operation, Func<Task<T>> action)
     {
         var stopwatch = Stopwatch.StartNew();
+        var dependencyName = GetDependencyName();
 
         try
         {
@@ -225,7 +227,7 @@ public sealed class EfTradingRepository : ITradingRepository
 
             DependencyCallSucceeded(
                 _logger,
-                "sqlite",
+                dependencyName,
                 operation,
                 stopwatch.Elapsed.TotalMilliseconds,
                 null);
@@ -238,7 +240,7 @@ public sealed class EfTradingRepository : ITradingRepository
 
             DependencyCallFailed(
                 _logger,
-                "sqlite",
+                dependencyName,
                 operation,
                 stopwatch.Elapsed.TotalMilliseconds,
                 exception);
@@ -262,6 +264,11 @@ public sealed class EfTradingRepository : ITradingRepository
     private static PositionSnapshot MapPositionSnapshot(PositionSnapshotEntity entity)
     {
         return new PositionSnapshot(entity.Ticker, Enum.Parse<TradeSide>(entity.Side), entity.Contracts, entity.AveragePrice, entity.AsOf);
+    }
+
+    private string GetDependencyName()
+    {
+        return DatabaseProviders.GetDependencyName(_dbContext.Database.ProviderName);
     }
 
     private static Order MapOrder(OrderEntity orderEntity, TradeIntentEntity tradeIntentEntity)
