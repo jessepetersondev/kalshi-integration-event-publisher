@@ -43,6 +43,7 @@ dotnet test tests/Kalshi.Integration.AcceptanceTests/Kalshi.Integration.Acceptan
 ### Unit coverage gate
 
 The unit test project collects coverage automatically and fails below the configured threshold.
+The same Cobertura file is what the Azure DevOps pipeline publishes as unit-test coverage.
 Coverage output is written to:
 
 ```bash

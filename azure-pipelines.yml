@@ -1,0 +1,87 @@
+trigger:
+  branches:
+    include:
+      - master
+      - main
+
+pr:
+  branches:
+    include:
+      - master
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  BuildConfiguration: Release
+  DotNetVersion: 8.0.x
+  NodeVersion: 22.x
+  DotNetTestResultsDirectory: $(Agent.TempDirectory)/dotnet-test-results
+  UnitCoverageSummaryFile: $(Build.SourcesDirectory)/tests/Kalshi.Integration.UnitTests/TestResults/Coverage/coverage.cobertura.xml
+  UnitCoverageArtifactDirectory: $(Build.SourcesDirectory)/tests/Kalshi.Integration.UnitTests/TestResults/Coverage
+
+stages:
+  - stage: validate
+    displayName: Validate build and tests
+    jobs:
+      - job: build_test
+        displayName: Build, test, and publish coverage
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: UseDotNet@2
+            displayName: Install .NET SDK $(DotNetVersion)
+            inputs:
+              packageType: sdk
+              version: $(DotNetVersion)
+
+          - task: NodeTool@0
+            displayName: Install Node.js $(NodeVersion)
+            inputs:
+              versionSpec: $(NodeVersion)
+
+          - script: dotnet restore KalshiIntegrationSandbox.sln
+            displayName: Restore .NET solution
+
+          - script: dotnet build KalshiIntegrationSandbox.sln --configuration $(BuildConfiguration) --no-restore
+            displayName: Build .NET solution
+
+          - script: >-
+              dotnet test KalshiIntegrationSandbox.sln
+              --configuration $(BuildConfiguration)
+              --no-build
+              --logger "trx;LogFileName=kalshi-integration.trx"
+              --results-directory "$(DotNetTestResultsDirectory)"
+            displayName: Run .NET tests
+
+          - task: PublishTestResults@2
+            displayName: Publish .NET test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: $(DotNetTestResultsDirectory)/**/*.trx
+              failTaskOnFailedTests: true
+              testRunTitle: Kalshi Integration Sandbox .NET Tests
+
+          - script: node --test
+            displayName: Run Node gateway tests
+            workingDirectory: node-gateway
+
+          - task: PublishCodeCoverageResults@1
+            displayName: Publish unit test coverage
+            condition: succeededOrFailed()
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: $(UnitCoverageSummaryFile)
+              pathToSources: $(Build.SourcesDirectory)
+              failIfCoverageEmpty: true
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish unit coverage artifact
+            condition: succeededOrFailed()
+            inputs:
+              targetPath: $(UnitCoverageArtifactDirectory)
+              artifact: unit-test-coverage
+              publishLocation: pipeline
