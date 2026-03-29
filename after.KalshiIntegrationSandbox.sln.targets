@@ -1,0 +1,20 @@
+<Project>
+  <Target Name="Build">
+    <ItemGroup>
+      <_SolutionBuildProjects Include="$(MSBuildThisFileDirectory)src/Kalshi.Integration.Api/Kalshi.Integration.Api.csproj" />
+      <_SolutionBuildProjects Include="$(MSBuildThisFileDirectory)tests/Kalshi.Integration.UnitTests/Kalshi.Integration.UnitTests.csproj" />
+      <_SolutionBuildProjects Include="$(MSBuildThisFileDirectory)tests/Kalshi.Integration.IntegrationTests/Kalshi.Integration.IntegrationTests.csproj" />
+      <_SolutionBuildProjects Include="$(MSBuildThisFileDirectory)tests/Kalshi.Integration.AcceptanceTests/Kalshi.Integration.AcceptanceTests.csproj" />
+    </ItemGroup>
+
+    <Message Importance="high" Text="Solution build projects: @(_SolutionBuildProjects)" />
+
+    <MSBuild
+      Projects="@(_SolutionBuildProjects)"
+      Targets="Build"
+      BuildInParallel="false"
+      StopOnFirstFailure="true"
+      Properties="Configuration=$(Configuration)"
+      RemoveProperties="BuildingSolutionFile;CurrentSolutionConfigurationContents;SolutionDir;SolutionExt;SolutionFileName;SolutionName;SolutionPath" />
+  </Target>
+</Project>
