@@ -1,8 +1,6 @@
 # Kalshi Integration Event Publisher
 
-A portfolio-grade integration sandbox that models how a production-minded trading workflow can move from API intake through validation, persistence, outbound integration, execution updates, and operator visibility.
-
-The project intentionally mixes:
+The project mixes:
 - **ASP.NET Core / .NET 8** for the core service boundary
 - **Node.js** for an external-facing integration gateway / webhook simulator
 - **clean architecture + SOLID boundaries** for long-term maintainability
