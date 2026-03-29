@@ -61,7 +61,7 @@ public sealed class AcceptanceTestWebApplicationFactory : WebApplicationFactory<
         return client;
     }
 
-    public string CreateJwtToken(params string[] roles)
+    public static string CreateJwtToken(params string[] roles)
     {
         var normalizedRoles = roles is { Length: > 0 }
             ? roles.Select(role => role.Trim()).Where(role => !string.IsNullOrWhiteSpace(role)).Distinct(StringComparer.Ordinal).ToArray()
