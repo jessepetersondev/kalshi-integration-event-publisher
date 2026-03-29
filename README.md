@@ -255,6 +255,25 @@ Notes:
 
 See:
 - `docs/deployment-artifacts.md`
+- `docs/azure-deployment-guide.md`
+
+## Azure deployment guide
+
+The recommended Azure target for this repo is **Azure Container Apps** with:
+- one container app for the .NET API
+- one container app for the Node gateway
+- Azure Container Registry for images
+- Azure SQL Database for persistence
+- Azure Key Vault for secrets
+- Log Analytics / Azure Monitor for platform diagnostics
+
+Why this target fits:
+- the repo already has Dockerfiles for both services
+- multi-service HTTP deployment is straightforward
+- environment-variable and secret-based configuration maps directly to the current app design
+
+See:
+- `docs/azure-deployment-guide.md`
 
 ## Environment configuration
 
