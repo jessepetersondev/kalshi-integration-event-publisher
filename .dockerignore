@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+**/.vs/
+**/*.user
+**/*.suo
+**/*.db-shm
+**/*.db-wal
+.git/
+.gitignore
+memory/

@@ -221,6 +221,41 @@ For SQL Server / Azure SQL, set the provider + connection string first, then run
 Examples and connection-string guidance live in:
 - `docs/database-providers.md`
 
+## Deployment artifacts
+
+The repo now includes lightweight container/deployment artifacts for local multi-service runs:
+- `src/Kalshi.Integration.Api/Dockerfile`
+- `node-gateway/Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+
+Quick start:
+
+```bash
+docker compose up --build
+```
+
+Local container endpoints:
+- API: `http://localhost:5000`
+- Gateway: `http://localhost:3001`
+
+Quick verification:
+
+```bash
+curl -s http://localhost:5000/health/live
+curl -s http://localhost:5000/health/ready
+curl -s http://localhost:3001/health
+```
+
+Notes:
+- the compose stack uses SQLite on a named Docker volume for local/demo runs
+- the API container applies migrations on startup
+- the gateway talks to the API through the compose network
+- these artifacts are meant for local/demo deployment; Azure-oriented hosting can override the database, secrets, and networking model later
+
+See:
+- `docs/deployment-artifacts.md`
+
 ## Environment configuration
 
 The repo now has an explicit **local / shared-dev / cloud** configuration story.
@@ -409,3 +444,21 @@ Then open:
 - `/health/live`
 - `/health/ready`
 - `/api/v1/system/ping`
+
+## Containerized local run
+
+From the repo root:
+
+```bash
+docker compose up --build
+```
+
+The compose stack publishes:
+- API on `http://localhost:5000`
+- Node gateway on `http://localhost:3001`
+
+To stop it:
+
+```bash
+docker compose down
+```

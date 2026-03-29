@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/Kalshi.Integration.Api/Dockerfile
+    image: kalshi-integration-sandbox-api:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Database__Provider: Sqlite
+      ConnectionStrings__KalshiIntegration: Data Source=/data/kalshi-integration-sandbox.db
+      Database__ApplyMigrationsOnStartup: "true"
+      Authentication__Jwt__Issuer: kalshi-integration-sandbox
+      Authentication__Jwt__Audience: kalshi-integration-sandbox-clients
+      Authentication__Jwt__SigningKey: change-this-local-container-signing-key-please
+      Authentication__Jwt__EnableDevelopmentTokenIssuance: "false"
+      Integrations__NodeGateway__Enabled: "true"
+      Integrations__NodeGateway__BaseUrl: http://gateway:3001
+      Integrations__NodeGateway__HealthPath: /health
+      Integrations__NodeGateway__TimeoutSeconds: "5"
+      Integrations__NodeGateway__RetryAttempts: "2"
+      Integrations__NodeGateway__IncludeInReadiness: "true"
+    volumes:
+      - kalshi_api_data:/data
+    ports:
+      - "5000:8080"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: node-gateway/Dockerfile
+    image: kalshi-integration-sandbox-gateway:local
+    environment:
+      PORT: 3001
+      BACKEND_BASE_URL: http://api:8080
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"
+
+volumes:
+  kalshi_api_data:
