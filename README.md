@@ -24,7 +24,6 @@ This sandbox is designed to demonstrate the kind of engineering work that sits b
 - external integration forwarding
 - production-minded health, auth, logging, and deployment patterns
 
-It is not trying to be a real exchange client. It is trying to be a credible **integration-service example** that is easy to review, run, and discuss.
 
 ## What the system does
 
