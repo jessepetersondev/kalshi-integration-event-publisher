@@ -7,6 +7,7 @@ using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.TradeIntents;
 using Kalshi.Integration.Domain.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
@@ -42,6 +43,7 @@ public sealed class TradeIntentsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "trading.write")]
     [ProducesResponseType(typeof(TradeIntentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]

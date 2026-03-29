@@ -15,7 +15,7 @@ public sealed class DemoFlowAcceptanceTests : IClassFixture<AcceptanceTestWebApp
 
     public DemoFlowAcceptanceTests(AcceptanceTestWebApplicationFactory factory)
     {
-        _client = factory.CreateClient();
+        _client = factory.CreateAuthenticatedClient("admin", "trader", "operator", "integration");
     }
 
     [Fact]

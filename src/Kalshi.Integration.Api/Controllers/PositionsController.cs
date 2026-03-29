@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Positions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
@@ -18,6 +19,7 @@ public sealed class PositionsController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "operations.read")]
     [ProducesResponseType(typeof(IReadOnlyList<PositionResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {

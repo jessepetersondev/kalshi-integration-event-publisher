@@ -14,14 +14,67 @@ namespace Kalshi.Integration.IntegrationTests;
 
 public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestWebApplicationFactory>
 {
+    private readonly IntegrationTestWebApplicationFactory _factory;
     private readonly HttpClient _client;
+    private readonly HttpClient _anonymousClient;
     private readonly InMemoryApplicationEventPublisher _applicationEventPublisher;
 
     public ApiEndpointIntegrationTests(IntegrationTestWebApplicationFactory factory)
     {
-        _client = factory.CreateClient();
+        _factory = factory;
+        _client = factory.CreateAuthenticatedClient("admin", "trader", "operator", "integration");
+        _anonymousClient = factory.CreateClient();
         _applicationEventPublisher = factory.Services.GetRequiredService<InMemoryApplicationEventPublisher>();
         _applicationEventPublisher.Reset();
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoints_ShouldRequireAuthentication()
+    {
+        var dashboardResponse = await _anonymousClient.GetAsync("/api/v1/dashboard/orders");
+        var nodeGatewayResponse = await _anonymousClient.GetAsync("/api/v1/system/dependencies/node-gateway");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, dashboardResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, nodeGatewayResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoints_ShouldRejectUsersWithoutRequiredRole()
+    {
+        using var client = _factory.CreateAuthenticatedClient("integration");
+        var response = await client.GetAsync("/api/v1/dashboard/orders");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PublicEndpoints_ShouldRemainAvailableWithoutAuthentication()
+    {
+        var pingResponse = await _anonymousClient.GetAsync("/api/v1/system/ping");
+        var liveResponse = await _anonymousClient.GetAsync("/health/live");
+        var readyResponse = await _anonymousClient.GetAsync("/health/ready");
+
+        pingResponse.EnsureSuccessStatusCode();
+        liveResponse.EnsureSuccessStatusCode();
+        readyResponse.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Swagger_ShouldBeDisabledOutsideDevelopmentByDefault()
+    {
+        var response = await _anonymousClient.GetAsync("/swagger/v1/swagger.json");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DevelopmentTokenEndpoint_ShouldIssueJwtForRequestedRoles()
+    {
+        var response = await _anonymousClient.PostAsJsonAsync("/api/v1/auth/dev-token", new { roles = new[] { "operator" }, subject = "local-docs-user" });
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<DevTokenEnvelope>();
+        Assert.NotNull(payload);
+        Assert.Contains("operator", payload!.Roles);
+        Assert.False(string.IsNullOrWhiteSpace(payload.AccessToken));
     }
 
     [Fact]
@@ -472,3 +525,5 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
         return Assert.Single(values);
     }
 }
+
+file sealed record DevTokenEnvelope(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, IReadOnlyList<string> Roles, string Issuer, string Audience);

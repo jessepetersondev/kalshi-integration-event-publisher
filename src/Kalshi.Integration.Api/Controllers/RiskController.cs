@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Kalshi.Integration.Application.Risk;
 using Kalshi.Integration.Contracts.TradeIntents;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
@@ -18,6 +19,7 @@ public sealed class RiskController : ControllerBase
     }
 
     [HttpPost("validate")]
+    [Authorize(Policy = "trading.write")]
     [ProducesResponseType(typeof(RiskDecisionResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> Validate([FromBody] CreateTradeIntentRequest request, CancellationToken cancellationToken)
     {

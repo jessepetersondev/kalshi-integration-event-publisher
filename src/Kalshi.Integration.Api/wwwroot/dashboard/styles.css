@@ -121,6 +121,49 @@ nav a:hover {
   font-size: 0.92rem;
 }
 
+.auth-card {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: rgba(238, 244, 255, 0.88);
+}
+
+.auth-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 100px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 18, 32, 0.35);
+  color: #eef4ff;
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.secondary-button {
+  background: rgba(255, 255, 255, 0.12);
+  color: #eef4ff;
+  box-shadow: none;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.auth-status {
+  font-size: 0.84rem;
+  color: rgba(238, 244, 255, 0.78);
+}
+
 .refresh-button,
 button {
   border: 0;

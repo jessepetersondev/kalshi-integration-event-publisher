@@ -1,10 +1,14 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Kalshi.Integration.Infrastructure.Persistence;
 
 public sealed class DatabaseOptions
 {
     public const string SectionName = "Database";
 
+    [Required]
     public string Provider { get; set; } = DatabaseProviders.Sqlite;
+
     public bool ApplyMigrationsOnStartup { get; set; } = true;
 }
 

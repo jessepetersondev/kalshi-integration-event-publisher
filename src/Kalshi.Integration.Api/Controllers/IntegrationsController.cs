@@ -7,6 +7,7 @@ using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Integrations;
 using Kalshi.Integration.Domain.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
@@ -42,6 +43,7 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     [HttpPost("execution-updates")]
+    [Authorize(Policy = "integration.write")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

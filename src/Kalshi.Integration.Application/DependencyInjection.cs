@@ -11,7 +11,12 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<RiskOptions>(configuration.GetSection(RiskOptions.SectionName));
+        services.AddOptions<RiskOptions>()
+            .Bind(configuration.GetSection(RiskOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(options => options.MaxOrderSize > 0, "Risk:MaxOrderSize must be greater than zero.")
+            .ValidateOnStart();
+
         services.AddScoped<RiskEvaluator>();
         services.AddScoped<IdempotencyService>();
         services.AddScoped<TradingService>();

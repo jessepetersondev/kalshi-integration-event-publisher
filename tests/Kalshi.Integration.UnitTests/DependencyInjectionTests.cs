@@ -5,6 +5,7 @@ using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Risk;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Infrastructure;
+using Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 using Kalshi.Integration.Infrastructure.Messaging;
 using Kalshi.Integration.Infrastructure.Operations;
 using Kalshi.Integration.Infrastructure.Persistence;
@@ -147,11 +148,72 @@ public sealed class DependencyInjectionTests
             var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
             Assert.IsType<RabbitMqApplicationEventPublisher>(publisher);
             Assert.NotNull(provider.GetRequiredService<IConnectionFactory>());
+            Assert.NotNull(provider.GetRequiredService<INodeGatewayClient>());
         }
 
         if (File.Exists(databasePath))
         {
             File.Delete(databasePath);
         }
+    }
+
+    [Fact]
+    public void AddApplication_ShouldRejectInvalidRiskOptions()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Mock.Of<ITradingRepository>());
+        services.AddSingleton(Mock.Of<IOperationalIssueStore>());
+        services.AddSingleton(Mock.Of<IAuditRecordStore>());
+        services.AddSingleton(Mock.Of<IIdempotencyStore>());
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{RiskOptions.SectionName}:MaxOrderSize"] = "0",
+            })
+            .Build();
+
+        services.AddApplication(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<RiskOptions>>().Value);
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldRejectUnsupportedDatabaseProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:KalshiIntegration"] = "Data Source=:memory:",
+                ["Database:Provider"] = "Oracle",
+            })
+            .Build();
+
+        Assert.Throws<InvalidOperationException>(() => services.AddInfrastructure(configuration));
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldRejectInvalidNodeGatewayBaseUrl()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:KalshiIntegration"] = "Data Source=:memory:",
+                ["Integrations:NodeGateway:BaseUrl"] = "not-a-url",
+            })
+            .Build();
+
+        services.AddInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<NodeGatewayOptions>>().Value);
     }
 }

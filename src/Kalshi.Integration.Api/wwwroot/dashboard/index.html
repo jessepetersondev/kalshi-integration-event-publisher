@@ -31,6 +31,19 @@
         <p>No seeded dashboard rows. This surface only renders what exists in the backing store.</p>
       </div>
 
+      <div class="sidebar-card auth-card">
+        <h3>Dashboard access token</h3>
+        <p>Paste a bearer token to unlock protected operational endpoints.</p>
+        <label class="auth-label" for="access-token">Bearer token</label>
+        <textarea id="access-token" class="auth-textarea" rows="5" placeholder="eyJhbGciOi..."></textarea>
+        <div class="auth-actions">
+          <button id="save-token" type="button">Save token</button>
+          <button id="clear-token" type="button" class="secondary-button">Clear</button>
+        </div>
+        <button id="issue-dev-token" type="button" class="secondary-button full-width">Issue local dev token</button>
+        <p id="auth-status" class="auth-status">No token saved yet.</p>
+      </div>
+
       <button id="refresh-all" class="refresh-button">Refresh dashboard</button>
     </aside>
 

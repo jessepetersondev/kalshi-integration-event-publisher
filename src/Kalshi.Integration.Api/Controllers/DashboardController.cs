@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Kalshi.Integration.Application.Dashboard;
 using Kalshi.Integration.Contracts.Dashboard;
 using Kalshi.Integration.Contracts.Positions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
@@ -9,6 +10,7 @@ namespace Kalshi.Integration.Api.Controllers;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/dashboard")]
+[Authorize(Policy = "operations.read")]
 public sealed class DashboardController : ControllerBase
 {
     private readonly DashboardService _dashboardService;

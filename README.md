@@ -53,6 +53,114 @@ Dependency direction follows clean architecture / SOLID principles:
 - JPC-1552: stricter .NET build baseline with central package management, analyzers, and format verification
 - JPC-1553: checked-in EF Core migrations with startup migration application
 - JPC-1554: SQL Server / Azure SQL provider support while keeping SQLite as the clean local default
+- JPC-1555: JWT authentication and policy-based authorization for trading and operational endpoints
+- JPC-1556: strongly typed options validation and startup configuration guards
+- JPC-1557: outbound HTTP integration hardening with `IHttpClientFactory`, resilience, and correlation propagation
+
+## Authentication and authorization
+
+The API now uses **JWT bearer authentication** with **policy-based authorization** instead of ad hoc endpoint checks.
+
+Current policy intent:
+- `trading.write` → write access for `admin` or `trader`
+- `trading.read` → read access for `admin`, `trader`, or `operator`
+- `operations.read` → operational/dashboard access for `admin` or `operator`
+- `integration.write` → inbound integration/update access for `admin` or `integration`
+
+Public endpoints remain intentionally anonymous:
+- `/`
+- `/dashboard` and static dashboard assets
+- `/health/live`
+- `/health/ready`
+- `/api/v1/system/ping`
+- `/api/v1/auth/dev-token` when development-token issuance is enabled
+
+Protected examples:
+- `POST /api/v1/trade-intents`
+- `POST /api/v1/orders`
+- `GET /api/v1/orders/{id}`
+- `GET /api/v1/positions`
+- `GET /api/v1/dashboard/*`
+- `POST /api/v1/integrations/execution-updates`
+- `GET /api/v1/system/dependencies/node-gateway`
+
+### Swagger exposure behavior
+
+- **Development / Testing**: Swagger UI is available
+- **Non-development**: Swagger stays off by default
+- To opt in outside development, set:
+
+```json
+{
+  "OpenApi": {
+    "EnableSwaggerInNonDevelopment": true
+  }
+}
+```
+
+### Local token workflow
+
+For local work, the app can issue a development JWT so you can exercise protected endpoints without wiring a real identity provider first.
+
+Development settings example:
+
+```json
+{
+  "Authentication": {
+    "Jwt": {
+      "Issuer": "kalshi-integration-sandbox",
+      "Audience": "kalshi-integration-sandbox-clients",
+      "SigningKey": "kalshi-integration-sandbox-local-dev-signing-key-please-change",
+      "TokenLifetimeMinutes": 60,
+      "EnableDevelopmentTokenIssuance": true
+    }
+  }
+}
+```
+
+Issue a token locally:
+
+```bash
+curl -s http://localhost:5000/api/v1/auth/dev-token \
+  -H 'Content-Type: application/json' \
+  -d '{"roles":["admin","operator","trader","integration"],"subject":"local-dev-user"}'
+```
+
+Use the returned access token:
+
+```bash
+TOKEN="<paste access token>"
+
+curl -s http://localhost:5000/api/v1/dashboard/orders \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The operator dashboard also includes a local token box plus a **Issue local dev token** shortcut for development/testing environments.
+
+## Startup configuration validation
+
+Critical configuration now binds to **strongly typed options** and fails fast during startup when invalid.
+
+Validated areas currently include:
+- `Risk`
+- `Database`
+- `EventPublishing`
+- `RabbitMq`
+- `Integrations:NodeGateway`
+- `Authentication:Jwt`
+- `OpenApi`
+
+Examples of guarded settings:
+- `Risk:MaxOrderSize` must be greater than zero
+- `Database:Provider` must resolve to `Sqlite`, `SqlServer`, or `AzureSql`
+- `ConnectionStrings:KalshiIntegration` is required for the selected provider
+- `EventPublishing:Provider` must be `InMemory` or `RabbitMq`
+- `RabbitMq:Port` must be a valid TCP port
+- `Integrations:NodeGateway:BaseUrl` must be an absolute URL
+- `Integrations:NodeGateway:HealthPath` must start with `/`
+- `Authentication:Jwt:SigningKey` must be configured and at least 32 characters long
+
+This keeps broken local/app-host configuration from surfacing later as runtime-only failures.
 
 ## Risk validation
 
@@ -173,6 +281,40 @@ Provider selection is configuration-driven:
 
 See:
 - `docs/event-publishing.md`
+
+## Outbound integrations
+
+The current outbound HTTP dependency path is the **Node gateway** integration.
+
+That path is now wired through `IHttpClientFactory` and hardened with:
+- managed `HttpClient` registration instead of ad hoc client construction
+- explicit per-attempt timeout configuration
+- explicit retry configuration via the standard resilience handler
+- correlation-id propagation using `x-correlation-id`
+- structured dependency logging aligned with the rest of the app
+- optional readiness participation when `Integrations:NodeGateway:IncludeInReadiness=true`
+
+Relevant settings:
+
+```json
+{
+  "Integrations": {
+    "NodeGateway": {
+      "Enabled": true,
+      "BaseUrl": "http://localhost:3001",
+      "HealthPath": "/health",
+      "TimeoutSeconds": 5,
+      "RetryAttempts": 2,
+      "IncludeInReadiness": false
+    }
+  }
+}
+```
+
+Operator probe endpoint:
+- `GET /api/v1/system/dependencies/node-gateway`
+
+That endpoint is protected by the `operations.read` policy so outbound dependency visibility stays intentional.
 
 ## Health and observability
 

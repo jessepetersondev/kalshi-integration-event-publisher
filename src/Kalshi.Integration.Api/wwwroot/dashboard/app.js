@@ -4,7 +4,10 @@ const endpoints = {
   events: '/api/v1/dashboard/events?limit=50',
   audit: (category, hours, limit) => `/api/v1/dashboard/audit-records?hours=${encodeURIComponent(hours)}&limit=${encodeURIComponent(limit)}${category ? `&category=${encodeURIComponent(category)}` : ''}`,
   issues: (category, hours) => `/api/v1/dashboard/issues?hours=${encodeURIComponent(hours)}${category ? `&category=${encodeURIComponent(category)}` : ''}`,
+  devToken: '/api/v1/auth/dev-token',
 };
+
+const accessTokenStorageKey = 'kalshi.integration.dashboard.access-token';
 
 function setStatus(id, text) {
   document.getElementById(id).textContent = text;
@@ -58,6 +61,70 @@ function renderBadge(value, kind, fallback = '—') {
   return `<span class="badge badge-${kind} badge-${kind}-${token}">${escapeHtml(label)}</span>`;
 }
 
+function getAccessToken() {
+  return localStorage.getItem(accessTokenStorageKey)?.trim() || '';
+}
+
+function saveAccessToken(value) {
+  const token = String(value ?? '').trim();
+  if (token) {
+    localStorage.setItem(accessTokenStorageKey, token);
+  } else {
+    localStorage.removeItem(accessTokenStorageKey);
+  }
+
+  const field = document.getElementById('access-token');
+  if (field) field.value = token;
+  setAuthStatus(token ? 'Token saved locally.' : 'No token saved yet.');
+}
+
+function setAuthStatus(text) {
+  const node = document.getElementById('auth-status');
+  if (node) node.textContent = text;
+}
+
+function createAuthorizedHeaders() {
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...createAuthorizedHeaders(),
+      ...(options.headers || {}),
+    },
+  });
+
+  if (response.status === 401) {
+    throw new Error('Unauthorized. Save a valid bearer token or issue a local dev token first.');
+  }
+
+  if (response.status === 403) {
+    throw new Error('Forbidden. Your token is valid but missing the required role/policy.');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function issueDevelopmentToken() {
+  const response = await fetchJson(endpoints.devToken, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ roles: ['admin', 'operator', 'trader', 'integration'], subject: 'dashboard-operator' }),
+  });
+
+  saveAccessToken(response.accessToken);
+  setAuthStatus('Local development token issued and saved.');
+}
+
 async function loadCollection({ url, bodyId, emptyId, errorId, statusId, emptyMessage, renderRow }) {
   const body = document.getElementById(bodyId);
   body.innerHTML = '';
@@ -66,9 +133,7 @@ async function loadCollection({ url, bodyId, emptyId, errorId, statusId, emptyMe
   setStatus(statusId, 'Loading…');
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
-    const items = await response.json();
+    const items = await fetchJson(url);
 
     if (!items.length) {
       setVisibility(emptyId, true);
