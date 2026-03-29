@@ -11,9 +11,9 @@ This repo now has a clear configuration strategy for **local**, **development/sh
 
 ## Configuration precedence
 
-### .NET API
+### .NET services
 
-ASP.NET Core configuration follows the standard precedence order used by `WebApplication.CreateBuilder(args)`:
+The API and executor worker both follow the standard host precedence order used by `WebApplication.CreateBuilder(args)` or `Host.CreateApplicationBuilder(args)`:
 
 1. `appsettings.json`
 2. `appsettings.{Environment}.json`
@@ -149,6 +149,11 @@ Checked-in files should contain only:
 - `src/Kalshi.Integration.Api/appsettings.json` → baseline defaults
 - `src/Kalshi.Integration.Api/appsettings.Development.json` → safe local-development defaults
 - `src/Kalshi.Integration.Api/appsettings.Cloud.example.json` → example cloud-oriented shape (template only)
+
+### .NET executor
+
+- `src/Kalshi.Integration.Executor/appsettings.json` → baseline worker defaults
+- `src/Kalshi.Integration.Executor/appsettings.Development.json` → safe local-development worker defaults
 
 ### Node gateway
 

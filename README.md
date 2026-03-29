@@ -90,6 +90,7 @@ src/
   Kalshi.Integration.Application/
   Kalshi.Integration.Domain/
   Kalshi.Integration.Infrastructure/
+  Kalshi.Integration.Executor/
   Kalshi.Integration.Contracts/
 
 tests/
@@ -130,6 +131,13 @@ node-gateway/
   - health checks
   - publisher implementations
   - provider-specific wiring
+
+- **Executor**
+  - worker/service host bootstrap
+  - RabbitMQ consumer shell
+  - event routing shell
+  - Kalshi execution placeholders
+  - result-event publishing shell
 
 - **Contracts**
   - request/response DTOs
@@ -208,6 +216,9 @@ Contains the core business model and rules that should remain independent from t
 ### `src/Kalshi.Integration.Infrastructure`
 Implements persistence, outbound integration behavior, health checks, migration support, and broker/integration adapters.
 
+### `src/Kalshi.Integration.Executor`
+Hosts the worker/service shell for the downstream executor, including configuration bootstrap, logging, DI wiring, and the doc-aligned folders for messaging, routing, Kalshi API execution, persistence, and observability.
+
 ### `src/Kalshi.Integration.Contracts`
 Contains the DTOs and request/response contracts shared across the service boundary.
 
@@ -246,6 +257,7 @@ Represents the external/customer-facing integration seam and makes webhook-style
 - JPC-1557: outbound HTTP integration hardening with `IHttpClientFactory`, resilience, and correlation propagation
 - JPC-1559: refined command/query and repository boundaries to keep application responsibilities cohesive
 - JPC-1560: stronger Azure DevOps PR quality gates with analyzer enforcement and NuGet dependency auditing
+- JPC-1563: executor worker project skeleton with configuration, logging, and DI shell
 
 ## Local setup
 
@@ -259,6 +271,12 @@ Represents the external/customer-facing integration seam and makes webhook-style
 #### API
 ```bash
 cd src/Kalshi.Integration.Api
+dotnet run
+```
+
+#### Executor worker
+```bash
+cd src/Kalshi.Integration.Executor
 dotnet run
 ```
 
@@ -372,6 +390,8 @@ The sandbox includes a transport-agnostic application event publishing seam with
 - `IApplicationEventPublisher`
 - `InMemoryApplicationEventPublisher`
 - `RabbitMqApplicationEventPublisher`
+
+The downstream executor now has a dedicated worker shell under `src/Kalshi.Integration.Executor` so the consume/route/execute/publish path can be implemented in follow-on stories without overloading the API project.
 
 Current published events include:
 - `trade-intent.created`
