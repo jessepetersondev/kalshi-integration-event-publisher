@@ -417,6 +417,18 @@ See:
 - `docs/deployment-artifacts.md`
 - `docs/azure-deployment-guide.md`
 
+## Interview and demo narrative
+
+A dedicated walkthrough guide is available at:
+- `docs/interview-demo-narrative.md`
+
+It includes:
+- a concise project pitch
+- how the repo maps to customer integrations and operational workflow work
+- a suggested live demo sequence
+- reliability and Microsoft-stack talking points
+- future enhancements to mention in interviews
+
 ## Notes for reviewers
 
 If you are reviewing this as a portfolio project, the important signals are:
