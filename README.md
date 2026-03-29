@@ -2,6 +2,14 @@
 
 Project for Kalshi trade-intent intake, order lifecycle management, webhook delivery, and operational visibility.
 
+## Repository
+
+- GitHub: https://github.com/jessepetersondev/kalshi-integration-sandbox
+- Default branch: `master`
+- Visibility: public
+
+This repository is published and accessible for portfolio review.
+
 ## Solution structure
 
 ```text
