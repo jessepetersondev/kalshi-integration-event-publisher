@@ -23,8 +23,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kalshi.Integration.Integrat
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kalshi.Integration.AcceptanceTests", "tests\Kalshi.Integration.AcceptanceTests\Kalshi.Integration.AcceptanceTests.csproj", "{06D9078D-DF0E-4E4A-BD1B-9378372A1A17}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kalshi.Integration.Executor", "src\Kalshi.Integration.Executor\Kalshi.Integration.Executor.csproj", "{4C681D4B-C358-4EFE-B288-15AA6803D2EA}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -66,10 +64,6 @@ Global
 		{06D9078D-DF0E-4E4A-BD1B-9378372A1A17}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06D9078D-DF0E-4E4A-BD1B-9378372A1A17}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{06D9078D-DF0E-4E4A-BD1B-9378372A1A17}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4C681D4B-C358-4EFE-B288-15AA6803D2EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4C681D4B-C358-4EFE-B288-15AA6803D2EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4C681D4B-C358-4EFE-B288-15AA6803D2EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4C681D4B-C358-4EFE-B288-15AA6803D2EA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{1E6A80DD-2A59-4E4E-BC3B-0315069BFF17} = {CD766786-0578-4923-BB0B-57B35B86694C}
@@ -80,6 +74,5 @@ Global
 		{82925C48-0A53-40C6-A747-B2E635A53C6F} = {82B2250F-8913-4F48-8052-647352BD36EE}
 		{9B2C77C1-E23E-42B9-A658-4489B40E06F9} = {82B2250F-8913-4F48-8052-647352BD36EE}
 		{06D9078D-DF0E-4E4A-BD1B-9378372A1A17} = {82B2250F-8913-4F48-8052-647352BD36EE}
-		{4C681D4B-C358-4EFE-B288-15AA6803D2EA} = {CD766786-0578-4923-BB0B-57B35B86694C}
 	EndGlobalSection
 EndGlobal
