@@ -20,8 +20,8 @@ variables:
   NodeVersion: 22.x
   Solution: $(Build.SourcesDirectory)/KalshiIntegrationEventPublisher.sln
   DotNetTestResultsDirectory: $(Agent.TempDirectory)/dotnet-test-results
-  UnitCoverageSummaryFile: $(Build.SourcesDirectory)/tests/Kalshi.Integration.UnitTests/TestResults/Coverage/coverage.cobertura.xml
-  UnitCoverageArtifactDirectory: $(Build.SourcesDirectory)/tests/Kalshi.Integration.UnitTests/TestResults/Coverage
+  UnitCoverageSummaryFile: $(Agent.TempDirectory)/dotnet-test-results/**/coverage.cobertura.xml
+  UnitCoverageArtifactDirectory: $(Agent.TempDirectory)/dotnet-test-results
 
 stages:
   - stage: validate
@@ -52,7 +52,7 @@ stages:
               -p:NuGetAuditLevel=high
             displayName: Restore .NET solution and audit NuGet dependencies
 
-          - script: dotnet format "$(Solution)" --verify-no-changes --no-restore
+          - script: dotnet format "$(Solution)" --verify-no-changes
             displayName: Verify .NET formatting
 
           - script: dotnet build "$(Solution)" --configuration $(BuildConfiguration) --no-restore -p:ContinuousIntegrationBuild=true
@@ -63,6 +63,7 @@ stages:
               --configuration $(BuildConfiguration)
               --no-build
               --logger "trx;LogFileName=kalshi-integration.trx"
+              --collect:"XPlat Code Coverage"
               --results-directory "$(DotNetTestResultsDirectory)"
             displayName: Run .NET tests
 
@@ -84,7 +85,7 @@ stages:
             condition: succeededOrFailed()
             inputs:
               codeCoverageTool: Cobertura
-              summaryFileLocation: $(UnitCoverageSummaryFile)
+              summaryFileLocation: '$(UnitCoverageSummaryFile)'
               pathToSources: $(Build.SourcesDirectory)
               failIfCoverageEmpty: true
 
