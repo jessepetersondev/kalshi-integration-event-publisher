@@ -7,6 +7,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
 
+/// <summary>
+/// Exposes operator-facing read models for orders, positions, events, issues,
+/// and audit history without mixing that query logic into write controllers.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/dashboard")]

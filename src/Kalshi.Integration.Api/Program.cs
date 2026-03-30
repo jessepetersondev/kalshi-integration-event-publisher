@@ -16,6 +16,8 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
+// Compose the API host in one place so local demo, test, and cloud deployment
+// paths all share the same auth, observability, persistence, and dashboard setup.
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();

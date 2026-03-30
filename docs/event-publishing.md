@@ -75,6 +75,12 @@ The envelope stays generic so concrete broker adapters can serialize it without 
 
 Default configuration lives in `src/Kalshi.Integration.Api/appsettings.json`.
 
+## Relationship to the executor repository
+
+This repository is responsible for publishing application events.
+The downstream execution/consumption flow now lives in the separate `kalshi-integration-executor` repository.
+That split keeps this repo focused on API-side intake, persistence, and publishing while the executor repo owns broker consumption, DLQ handling, replay, and Kalshi-side execution behavior.
+
 ## Future path
 
 If this sandbox later needs Azure-specific messaging signal, keep the application contract unchanged and add another infrastructure implementation such as:

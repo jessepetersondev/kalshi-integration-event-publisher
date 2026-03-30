@@ -25,6 +25,7 @@ tests/
 - Validate inbound payload shape
 - Forward valid execution updates to the .NET backend callback endpoint
 - Keep the integration boundary clean and testable
+- Provide a tiny, easy-to-explain seam for demos and interview walkthroughs
 
 ## Configuration
 

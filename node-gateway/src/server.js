@@ -2,6 +2,8 @@ const http = require('http');
 const { config } = require('./config');
 const { handleWebhookSimulation } = require('./routes/webhook-routes');
 
+// Keep the gateway tiny: one health endpoint, one simulated webhook endpoint,
+// and injectable dependencies so tests can run without a live backend.
 function createServer({ backendBaseUrl = config.backendBaseUrl, fetchImpl = fetch } = {}) {
   return http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/health') {

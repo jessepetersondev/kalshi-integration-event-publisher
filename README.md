@@ -388,7 +388,7 @@ The sandbox includes a transport-agnostic application event publishing seam with
 - `InMemoryApplicationEventPublisher`
 - `RabbitMqApplicationEventPublisher`
 
-The downstream executor now has a dedicated worker shell under `src/Kalshi.Integration.Executor` so the consume/route/execute/publish path can be implemented in follow-on stories without overloading the API project.
+The downstream executor now lives in its own repository (`kalshi-integration-executor`) for the real consume/route/execute/publish flow, while this repo remains the API/publisher side of that boundary.
 
 Current published events include:
 - `trade-intent.created`
