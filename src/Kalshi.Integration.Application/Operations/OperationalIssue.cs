@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Application.Operations;
+
 /// <summary>
 /// Represents operational issue.
 /// </summary>

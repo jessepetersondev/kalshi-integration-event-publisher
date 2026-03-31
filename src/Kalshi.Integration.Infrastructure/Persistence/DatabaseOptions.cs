@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
 namespace Kalshi.Integration.Infrastructure.Persistence;
+
 /// <summary>
 /// Represents configuration for database.
 /// </summary>

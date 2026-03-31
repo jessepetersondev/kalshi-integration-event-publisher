@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
+
 /// <summary>
 /// Represents configuration for node gateway.
 /// </summary>

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Kalshi.Integration.Application.Abstractions;
 
 namespace Kalshi.Integration.Application.Operations;
+
 /// <summary>
 /// Computes deterministic request hashes and stores replayable responses for endpoints
 /// that support idempotent writes.

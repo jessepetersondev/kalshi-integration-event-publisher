@@ -1,6 +1,7 @@
 using Kalshi.Integration.Domain.Common;
 
 namespace Kalshi.Integration.Domain.TradeIntents;
+
 /// <summary>
 /// Represents the domain model for trade intent.
 /// </summary>

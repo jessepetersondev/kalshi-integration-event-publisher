@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Api.Configuration;
+
 /// <summary>
 /// Represents configuration for open api.
 /// </summary>

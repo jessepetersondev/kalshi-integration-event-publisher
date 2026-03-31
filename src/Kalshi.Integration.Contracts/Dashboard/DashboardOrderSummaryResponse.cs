@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Contracts.Dashboard;
+
 /// <summary>
 /// Represents a response payload for dashboard order summary.
 /// </summary>

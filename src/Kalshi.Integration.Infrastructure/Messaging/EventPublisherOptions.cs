@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
 namespace Kalshi.Integration.Infrastructure.Messaging;
+
 /// <summary>
 /// Represents configuration for event publisher.
 /// </summary>

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Kalshi.Integration.Api.Controllers;
+
 /// <summary>
 /// Issues development authentication tokens for local and test environments where
 /// interactive identity infrastructure is not available.

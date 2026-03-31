@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace Kalshi.Integration.Contracts.Diagnostics;
+
 /// <summary>
 /// Defines telemetry names and instruments for kalshi.
 /// </summary>

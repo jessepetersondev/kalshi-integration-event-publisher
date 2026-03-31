@@ -3,6 +3,7 @@ using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.Positions;
 
 namespace Kalshi.Integration.Application.Trading;
+
 /// <summary>
 /// Coordinates trading query operations.
 /// </summary>

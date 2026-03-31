@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Domain.Common;
+
 /// <summary>
 /// Represents an error related to domain.
 /// </summary>

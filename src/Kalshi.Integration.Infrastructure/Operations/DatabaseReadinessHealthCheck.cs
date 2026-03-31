@@ -5,6 +5,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
 namespace Kalshi.Integration.Infrastructure.Operations;
+
 /// <summary>
 /// Reports health for database readiness.
 /// </summary>

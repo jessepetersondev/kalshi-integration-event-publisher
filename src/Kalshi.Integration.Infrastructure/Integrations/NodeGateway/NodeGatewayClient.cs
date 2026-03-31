@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
+
 /// <summary>
 /// Provides access to node gateway.
 /// </summary>

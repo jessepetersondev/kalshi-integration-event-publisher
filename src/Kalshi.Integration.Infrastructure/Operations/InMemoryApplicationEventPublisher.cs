@@ -3,6 +3,7 @@ using Kalshi.Integration.Application.Abstractions;
 using Kalshi.Integration.Application.Events;
 
 namespace Kalshi.Integration.Infrastructure.Operations;
+
 /// <summary>
 /// Publishes in memory application event.
 /// </summary>

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
+
 /// <summary>
 /// Exposes HTTP endpoints for system.
 /// </summary>

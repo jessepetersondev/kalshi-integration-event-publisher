@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 
 namespace Kalshi.Integration.Infrastructure;
+
 /// <summary>
 /// Registers infrastructure services, integrations, and persistence components with the dependency injection container.
 /// </summary>

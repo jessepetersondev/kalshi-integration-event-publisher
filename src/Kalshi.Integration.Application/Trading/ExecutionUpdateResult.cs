@@ -1,6 +1,7 @@
 using Kalshi.Integration.Contracts.Orders;
 
 namespace Kalshi.Integration.Application.Trading;
+
 /// <summary>
 /// Represents the result of execution update.
 /// </summary>

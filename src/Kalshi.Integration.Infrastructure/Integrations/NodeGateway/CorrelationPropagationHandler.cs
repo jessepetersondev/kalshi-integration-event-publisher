@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
+
 /// <summary>
 /// Handles correlation propagation events.
 /// </summary>

@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Contracts.Positions;
+
 /// <summary>
 /// Represents a response payload for position.
 /// </summary>

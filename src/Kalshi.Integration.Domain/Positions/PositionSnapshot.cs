@@ -2,6 +2,7 @@ using Kalshi.Integration.Domain.Common;
 using Kalshi.Integration.Domain.TradeIntents;
 
 namespace Kalshi.Integration.Domain.Positions;
+
 /// <summary>
 /// Represents a snapshot of position state.
 /// </summary>

@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Domain.Orders;
+
 /// <summary>
 /// Defines the supported order status values.
 /// </summary>

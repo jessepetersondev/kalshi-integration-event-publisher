@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Contracts.Orders;
+
 /// <summary>
 /// Represents a response payload for order.
 /// </summary>

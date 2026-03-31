@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
 namespace Kalshi.Integration.Api.Configuration;
+
 /// <summary>
 /// Represents configuration for jwt.
 /// </summary>

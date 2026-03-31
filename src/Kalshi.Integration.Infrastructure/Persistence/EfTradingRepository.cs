@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Kalshi.Integration.Infrastructure.Persistence;
+
 /// <summary>
 /// Provides persistence operations for ef trading.
 /// </summary>

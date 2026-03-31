@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kalshi.Integration.Api.Controllers;
+
 /// <summary>
 /// Handles order creation and retrieval endpoints, including idempotency checks,
 /// audit records, and application-event publication.

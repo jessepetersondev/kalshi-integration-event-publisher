@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
+
 /// <summary>
 /// Represents the result of node gateway probe.
 /// </summary>

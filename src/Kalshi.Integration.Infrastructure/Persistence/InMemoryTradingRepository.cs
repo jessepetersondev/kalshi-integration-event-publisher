@@ -6,6 +6,7 @@ using Kalshi.Integration.Domain.Positions;
 using Kalshi.Integration.Domain.TradeIntents;
 
 namespace Kalshi.Integration.Infrastructure.Persistence;
+
 /// <summary>
 /// Provides persistence operations for in memory trading.
 /// </summary>

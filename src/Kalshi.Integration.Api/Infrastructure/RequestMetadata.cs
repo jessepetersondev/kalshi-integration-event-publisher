@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Primitives;
 
 namespace Kalshi.Integration.Api.Infrastructure;
+
 /// <summary>
 /// Provides helpers for reading, normalizing, and echoing correlation and idempotency
 /// headers on API requests and responses.

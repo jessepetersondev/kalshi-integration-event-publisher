@@ -2,6 +2,7 @@ using Kalshi.Integration.Domain.Common;
 using Kalshi.Integration.Domain.TradeIntents;
 
 namespace Kalshi.Integration.Domain.Orders;
+
 /// <summary>
 /// Represents the domain model for order.
 /// </summary>

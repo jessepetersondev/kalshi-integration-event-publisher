@@ -1,4 +1,5 @@
 namespace Kalshi.Integration.Contracts.Integrations;
+
 /// <summary>
 /// Represents a request payload for execution update.
 /// </summary>

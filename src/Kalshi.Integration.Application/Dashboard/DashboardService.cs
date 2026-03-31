@@ -3,6 +3,7 @@ using Kalshi.Integration.Contracts.Dashboard;
 using Kalshi.Integration.Contracts.Positions;
 
 namespace Kalshi.Integration.Application.Dashboard;
+
 /// <summary>
 /// Coordinates dashboard operations.
 /// </summary>
