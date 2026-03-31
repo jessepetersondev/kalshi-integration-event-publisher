@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 
 /// <summary>
-/// Represents the result of node gateway probe.
+/// Represents the outcome of probing the node gateway dependency.
 /// </summary>
-
-
 public sealed record NodeGatewayProbeResult(
     bool Healthy,
     int StatusCode,

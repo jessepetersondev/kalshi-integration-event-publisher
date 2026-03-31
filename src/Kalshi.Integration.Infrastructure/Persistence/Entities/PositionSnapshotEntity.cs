@@ -3,8 +3,6 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Entities;
 /// <summary>
 /// Represents the persistence model for position snapshot.
 /// </summary>
-
-
 public sealed class PositionSnapshotEntity
 {
     public Guid Id { get; set; }

@@ -7,8 +7,6 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Provides storage operations for in memory audit record.
 /// </summary>
-
-
 public sealed class InMemoryAuditRecordStore : IAuditRecordStore
 {
     private readonly ConcurrentQueue<AuditRecord> _records = new();

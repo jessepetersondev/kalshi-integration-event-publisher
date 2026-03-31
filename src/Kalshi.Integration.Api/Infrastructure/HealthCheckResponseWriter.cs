@@ -5,10 +5,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Kalshi.Integration.Api.Infrastructure;
 
 /// <summary>
-/// Represents health check response writer.
+/// Writes health-check results as a compact JSON payload for API clients and probes.
 /// </summary>
-
-
 public static class HealthCheckResponseWriter
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)

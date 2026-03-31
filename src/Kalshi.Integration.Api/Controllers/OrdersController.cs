@@ -29,6 +29,15 @@ public sealed class OrdersController : ControllerBase
     private readonly IdempotencyService _idempotencyService;
     private readonly ILogger<OrdersController> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OrdersController"/> class.
+    /// </summary>
+    /// <param name="tradingService">The service that creates orders.</param>
+    /// <param name="tradingQueryService">The service that reads order projections.</param>
+    /// <param name="auditRecordStore">The store used to persist audit records.</param>
+    /// <param name="applicationEventPublisher">The publisher used to emit order events.</param>
+    /// <param name="idempotencyService">The service used to detect duplicate order submissions.</param>
+    /// <param name="logger">The logger for the controller.</param>
     public OrdersController(
         TradingService tradingService,
         TradingQueryService tradingQueryService,
@@ -45,6 +54,12 @@ public sealed class OrdersController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Creates an order for an existing trade intent.
+    /// </summary>
+    /// <param name="request">The order request payload.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>A created response containing the persisted order.</returns>
     [HttpPost]
     [Authorize(Policy = "trading.write")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
@@ -157,6 +172,12 @@ public sealed class OrdersController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Returns the latest projection for a single order.
+    /// </summary>
+    /// <param name="id">The order identifier.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>The order projection when it exists.</returns>
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "trading.read")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]

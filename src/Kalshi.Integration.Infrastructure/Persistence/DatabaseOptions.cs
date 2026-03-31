@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Infrastructure.Persistence;
 
 /// <summary>
-/// Represents configuration for database.
+/// Configures the relational database used by the publisher service.
 /// </summary>
-
-
 public sealed class DatabaseOptions
 {
     public const string SectionName = "Database";
@@ -16,11 +14,10 @@ public sealed class DatabaseOptions
 
     public bool ApplyMigrationsOnStartup { get; set; } = true;
 }
+
 /// <summary>
 /// Defines supported database values.
 /// </summary>
-
-
 public static class DatabaseProviders
 {
     public const string Sqlite = "Sqlite";

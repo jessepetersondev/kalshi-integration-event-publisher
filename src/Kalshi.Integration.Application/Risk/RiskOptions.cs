@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Application.Risk;
 
 /// <summary>
-/// Represents configuration for risk.
+/// Configures risk limits and duplicate-detection rules for trade intents.
 /// </summary>
-
-
 public sealed class RiskOptions
 {
     public const string SectionName = "Risk";

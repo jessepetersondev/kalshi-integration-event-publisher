@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 
 /// <summary>
-/// Represents configuration for node gateway.
+/// Configures connectivity and request behavior for the node gateway integration.
 /// </summary>
-
-
 public sealed class NodeGatewayOptions
 {
     public const string SectionName = "Integrations:NodeGateway";

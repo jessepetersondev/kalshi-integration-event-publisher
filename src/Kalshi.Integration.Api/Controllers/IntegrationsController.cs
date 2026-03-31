@@ -13,10 +13,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Kalshi.Integration.Api.Controllers;
 
 /// <summary>
-/// Exposes HTTP endpoints for integrations.
+/// Accepts callbacks from external systems and records their effects as audited,
+/// idempotent application events.
 /// </summary>
-
-
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/integrations")]
@@ -31,6 +30,15 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IdempotencyService _idempotencyService;
     private readonly ILogger<IntegrationsController> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IntegrationsController"/> class.
+    /// </summary>
+    /// <param name="tradingService">The trading workflow service.</param>
+    /// <param name="issueStore">The store used to record operational issues.</param>
+    /// <param name="auditRecordStore">The store used to persist audit records.</param>
+    /// <param name="applicationEventPublisher">The publisher used to emit integration events.</param>
+    /// <param name="idempotencyService">The service used to prevent duplicate callback processing.</param>
+    /// <param name="logger">The logger for the controller.</param>
     public IntegrationsController(
         TradingService tradingService,
         IOperationalIssueStore issueStore,
@@ -47,6 +55,12 @@ public sealed class IntegrationsController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Applies an execution update produced by an external execution system.
+    /// </summary>
+    /// <param name="request">The execution update payload to apply.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>An accepted response containing the resulting order snapshot.</returns>
     [HttpPost("execution-updates")]
     [Authorize(Policy = "integration.write")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]

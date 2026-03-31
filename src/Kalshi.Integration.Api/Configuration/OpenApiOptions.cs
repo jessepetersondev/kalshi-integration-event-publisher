@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Api.Configuration;
 
 /// <summary>
-/// Represents configuration for open api.
+/// Configures generated OpenAPI metadata for the API.
 /// </summary>
-
-
 public sealed class OpenApiOptions
 {
     public const string SectionName = "OpenApi";

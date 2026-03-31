@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Application.Events;
 
 /// <summary>
-/// Represents application event envelope.
+/// Represents the normalized application event published to downstream consumers.
 /// </summary>
-
-
 public sealed record ApplicationEventEnvelope(
     Guid Id,
     string Category,

@@ -4,10 +4,8 @@ using Kalshi.Integration.Domain.Orders;
 namespace Kalshi.Integration.Application.Abstractions;
 
 /// <summary>
-/// Provides persistence operations for i order.
+/// Persists orders together with their execution-event history.
 /// </summary>
-
-
 public interface IOrderRepository
 {
     Task AddOrderAsync(Order order, CancellationToken cancellationToken = default);

@@ -3,10 +3,8 @@ using Kalshi.Integration.Contracts.Orders;
 namespace Kalshi.Integration.Application.Trading;
 
 /// <summary>
-/// Represents the result of execution update.
+/// Represents the persisted order state after an execution update is applied.
 /// </summary>
-
-
 public sealed record ExecutionUpdateResult(
     Guid OrderId,
     string Status,

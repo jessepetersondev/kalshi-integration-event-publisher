@@ -5,12 +5,14 @@ namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 /// <summary>
 /// Reports health for node gateway readiness.
 /// </summary>
-
-
 public sealed class NodeGatewayReadinessHealthCheck : IHealthCheck
 {
     private readonly INodeGatewayClient _client;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NodeGatewayReadinessHealthCheck"/> class.
+    /// </summary>
+    /// <param name="client">The client used to probe node gateway readiness.</param>
     public NodeGatewayReadinessHealthCheck(INodeGatewayClient client)
     {
         _client = client;

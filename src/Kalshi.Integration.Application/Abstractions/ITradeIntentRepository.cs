@@ -3,10 +3,8 @@ using Kalshi.Integration.Domain.TradeIntents;
 namespace Kalshi.Integration.Application.Abstractions;
 
 /// <summary>
-/// Provides persistence operations for i trade intent.
+/// Persists trade intents and supports correlation-id lookups.
 /// </summary>
-
-
 public interface ITradeIntentRepository
 {
     Task AddTradeIntentAsync(TradeIntent tradeIntent, CancellationToken cancellationToken = default);

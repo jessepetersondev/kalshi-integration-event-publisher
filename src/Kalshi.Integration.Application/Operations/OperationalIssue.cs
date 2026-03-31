@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Application.Operations;
 
 /// <summary>
-/// Represents operational issue.
+/// Represents an operational issue that should surface in dashboard views and diagnostics.
 /// </summary>
-
-
 public sealed record OperationalIssue(
     Guid Id,
     string Category,

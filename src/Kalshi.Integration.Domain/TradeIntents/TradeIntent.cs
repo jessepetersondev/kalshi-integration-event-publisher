@@ -5,8 +5,6 @@ namespace Kalshi.Integration.Domain.TradeIntents;
 /// <summary>
 /// Represents the domain model for trade intent.
 /// </summary>
-
-
 public sealed class TradeIntent
 {
     public TradeIntent(

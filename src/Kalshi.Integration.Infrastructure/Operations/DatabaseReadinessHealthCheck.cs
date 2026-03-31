@@ -9,8 +9,6 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Reports health for database readiness.
 /// </summary>
-
-
 public sealed class DatabaseReadinessHealthCheck : IHealthCheck
 {
     private static readonly Action<ILogger, string, string, bool, double, Exception?> DependencyCheckCompleted =
@@ -28,6 +26,11 @@ public sealed class DatabaseReadinessHealthCheck : IHealthCheck
     private readonly KalshiIntegrationDbContext _dbContext;
     private readonly ILogger<DatabaseReadinessHealthCheck> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DatabaseReadinessHealthCheck"/> class.
+    /// </summary>
+    /// <param name="dbContext">The database context used to test connectivity.</param>
+    /// <param name="logger">The logger for dependency-check telemetry.</param>
     public DatabaseReadinessHealthCheck(KalshiIntegrationDbContext dbContext, ILogger<DatabaseReadinessHealthCheck> logger)
     {
         _dbContext = dbContext;

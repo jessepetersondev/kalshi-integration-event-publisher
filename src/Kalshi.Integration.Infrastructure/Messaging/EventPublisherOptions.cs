@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Infrastructure.Messaging;
 
 /// <summary>
-/// Represents configuration for event publisher.
+/// Configures the application-event publisher used by the publisher service.
 /// </summary>
-
-
 public sealed class EventPublisherOptions
 {
     public const string SectionName = "EventPublishing";
@@ -14,11 +12,10 @@ public sealed class EventPublisherOptions
     [Required]
     public string Provider { get; set; } = EventPublisherProviders.InMemory;
 }
+
 /// <summary>
 /// Defines supported event publisher values.
 /// </summary>
-
-
 public static class EventPublisherProviders
 {
     public const string InMemory = "InMemory";

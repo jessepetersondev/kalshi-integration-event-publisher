@@ -13,10 +13,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Kalshi.Integration.Api.Controllers;
 
 /// <summary>
-/// Exposes HTTP endpoints for trade intents.
+/// Accepts trade-intent requests, applies risk validation, and emits auditable domain events.
 /// </summary>
-
-
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/trade-intents")]
@@ -31,6 +29,15 @@ public sealed class TradeIntentsController : ControllerBase
     private readonly IdempotencyService _idempotencyService;
     private readonly ILogger<TradeIntentsController> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeIntentsController"/> class.
+    /// </summary>
+    /// <param name="tradingService">The service that creates trade intents.</param>
+    /// <param name="issueStore">The store used to record operational issues.</param>
+    /// <param name="auditRecordStore">The store used to persist audit records.</param>
+    /// <param name="applicationEventPublisher">The publisher used to emit trade-intent events.</param>
+    /// <param name="idempotencyService">The service used to detect duplicate trade-intent submissions.</param>
+    /// <param name="logger">The logger for the controller.</param>
     public TradeIntentsController(
         TradingService tradingService,
         IOperationalIssueStore issueStore,
@@ -47,6 +54,12 @@ public sealed class TradeIntentsController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Creates a new trade intent after validating it against configured risk controls.
+    /// </summary>
+    /// <param name="request">The trade-intent request payload.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>A created response containing the persisted trade intent.</returns>
     [HttpPost]
     [Authorize(Policy = "trading.write")]
     [ProducesResponseType(typeof(TradeIntentResponse), StatusCodes.Status201Created)]

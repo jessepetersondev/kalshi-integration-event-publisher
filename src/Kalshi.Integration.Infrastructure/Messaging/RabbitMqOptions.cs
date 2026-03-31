@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Infrastructure.Messaging;
 
 /// <summary>
-/// Represents configuration for rabbit mq.
+/// Configures the RabbitMQ connectivity and topology used for published events.
 /// </summary>
-
-
 public sealed class RabbitMqOptions
 {
     public const string SectionName = "RabbitMq";

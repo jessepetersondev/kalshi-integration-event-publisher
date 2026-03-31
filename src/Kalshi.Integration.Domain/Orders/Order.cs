@@ -6,8 +6,6 @@ namespace Kalshi.Integration.Domain.Orders;
 /// <summary>
 /// Represents the domain model for order.
 /// </summary>
-
-
 public sealed class Order
 {
     private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedTransitions =

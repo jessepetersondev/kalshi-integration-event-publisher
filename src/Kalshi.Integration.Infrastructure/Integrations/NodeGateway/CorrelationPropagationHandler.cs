@@ -6,8 +6,6 @@ namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 /// <summary>
 /// Handles correlation propagation events.
 /// </summary>
-
-
 public sealed class CorrelationPropagationHandler : DelegatingHandler
 {
     private const string CorrelationIdHeaderName = "x-correlation-id";

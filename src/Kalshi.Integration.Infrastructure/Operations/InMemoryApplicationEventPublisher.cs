@@ -7,8 +7,6 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Publishes in memory application event.
 /// </summary>
-
-
 public sealed class InMemoryApplicationEventPublisher : IApplicationEventPublisher
 {
     private readonly ConcurrentQueue<ApplicationEventEnvelope> _publishedEvents = new();

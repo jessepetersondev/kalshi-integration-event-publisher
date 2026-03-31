@@ -14,6 +14,10 @@ public sealed class IdempotencyService
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IIdempotencyStore _store;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IdempotencyService"/> class.
+    /// </summary>
+    /// <param name="store">The store used to persist idempotency fingerprints and replay payloads.</param>
     public IdempotencyService(IIdempotencyStore store)
     {
         _store = store;
@@ -62,22 +66,20 @@ public sealed class IdempotencyService
         return Convert.ToHexString(bytes);
     }
 }
+
 /// <summary>
 /// Defines the supported idempotency lookup status values.
 /// </summary>
-
-
 public enum IdempotencyLookupStatus
 {
     None,
     Replay,
     Conflict,
 }
+
 /// <summary>
 /// Represents the result of idempotency lookup.
 /// </summary>
-
-
 public sealed record IdempotencyLookupResult(IdempotencyLookupStatus Status, IdempotencyRecord? Record)
 {
     public static IdempotencyLookupResult None { get; } = new(IdempotencyLookupStatus.None, null);

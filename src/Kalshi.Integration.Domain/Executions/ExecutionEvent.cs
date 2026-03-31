@@ -6,8 +6,6 @@ namespace Kalshi.Integration.Domain.Executions;
 /// <summary>
 /// Represents the domain model for execution event.
 /// </summary>
-
-
 public sealed class ExecutionEvent
 {
     public ExecutionEvent(Guid orderId, OrderStatus status, int filledQuantity, DateTimeOffset occurredAt)

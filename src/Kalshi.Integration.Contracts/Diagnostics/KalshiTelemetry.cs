@@ -6,8 +6,6 @@ namespace Kalshi.Integration.Contracts.Diagnostics;
 /// <summary>
 /// Defines telemetry names and instruments for kalshi.
 /// </summary>
-
-
 public static class KalshiTelemetry
 {
     public const string ActivitySourceName = "Kalshi.Integration";

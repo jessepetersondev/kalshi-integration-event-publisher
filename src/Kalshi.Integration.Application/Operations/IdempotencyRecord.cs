@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Application.Operations;
 
 /// <summary>
-/// Represents a recorded idempotency entry.
+/// Represents the stored response and request fingerprint for an idempotent operation.
 /// </summary>
-
-
 public sealed record IdempotencyRecord(
     Guid Id,
     string Scope,

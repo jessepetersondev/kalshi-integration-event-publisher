@@ -7,8 +7,6 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Provides storage operations for in memory operational issue.
 /// </summary>
-
-
 public sealed class InMemoryOperationalIssueStore : IOperationalIssueStore
 {
     private readonly ConcurrentQueue<OperationalIssue> _issues = new();

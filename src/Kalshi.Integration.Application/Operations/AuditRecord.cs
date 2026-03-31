@@ -1,10 +1,8 @@
 namespace Kalshi.Integration.Application.Operations;
 
 /// <summary>
-/// Represents a recorded audit entry.
+/// Represents a durable audit record for an API or integration action.
 /// </summary>
-
-
 public sealed record AuditRecord(
     Guid Id,
     string Category,

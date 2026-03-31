@@ -11,8 +11,6 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Publishes rabbit mq application event.
 /// </summary>
-
-
 public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublisher
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);

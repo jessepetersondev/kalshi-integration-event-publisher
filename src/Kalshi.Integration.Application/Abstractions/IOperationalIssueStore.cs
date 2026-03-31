@@ -3,10 +3,8 @@ using Kalshi.Integration.Application.Operations;
 namespace Kalshi.Integration.Application.Abstractions;
 
 /// <summary>
-/// Provides storage operations for i operational issue.
+/// Persists operational issues surfaced by validation, integrations, and runtime failures.
 /// </summary>
-
-
 public interface IOperationalIssueStore
 {
     Task AddAsync(OperationalIssue issue, CancellationToken cancellationToken = default);

@@ -5,15 +5,18 @@ using Kalshi.Integration.Contracts.Positions;
 namespace Kalshi.Integration.Application.Trading;
 
 /// <summary>
-/// Coordinates trading query operations.
+/// Reads order and position projections without mutating trading state.
 /// </summary>
-
-
 public sealed class TradingQueryService
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IPositionSnapshotRepository _positionSnapshotRepository;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradingQueryService"/> class.
+    /// </summary>
+    /// <param name="orderRepository">The repository used to read orders.</param>
+    /// <param name="positionSnapshotRepository">The repository used to read position snapshots.</param>
     public TradingQueryService(IOrderRepository orderRepository, IPositionSnapshotRepository positionSnapshotRepository)
     {
         _orderRepository = orderRepository;

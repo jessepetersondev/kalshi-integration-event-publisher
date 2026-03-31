@@ -6,8 +6,6 @@ namespace Kalshi.Integration.Domain.Positions;
 /// <summary>
 /// Represents a snapshot of position state.
 /// </summary>
-
-
 public sealed class PositionSnapshot
 {
     public PositionSnapshot(string ticker, TradeSide side, int contracts, decimal averagePrice, DateTimeOffset asOf)

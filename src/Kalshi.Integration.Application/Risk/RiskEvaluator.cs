@@ -5,15 +5,18 @@ using Microsoft.Extensions.Options;
 namespace Kalshi.Integration.Application.Risk;
 
 /// <summary>
-/// Represents risk evaluator.
+/// Applies the publisher's configurable validation and duplicate-detection rules to trade intents.
 /// </summary>
-
-
 public sealed class RiskEvaluator
 {
     private readonly ITradeIntentRepository _tradeIntentRepository;
     private readonly RiskOptions _options;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RiskEvaluator"/> class.
+    /// </summary>
+    /// <param name="tradeIntentRepository">The repository used to detect duplicate correlation identifiers.</param>
+    /// <param name="options">The configured risk limits.</param>
     public RiskEvaluator(ITradeIntentRepository tradeIntentRepository, IOptions<RiskOptions> options)
     {
         _tradeIntentRepository = tradeIntentRepository;

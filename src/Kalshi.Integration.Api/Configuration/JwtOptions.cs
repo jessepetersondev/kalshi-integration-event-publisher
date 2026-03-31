@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Api.Configuration;
 
 /// <summary>
-/// Represents configuration for jwt.
+/// Configures JWT issuance and validation for the API.
 /// </summary>
-
-
 public sealed class JwtOptions
 {
     public const string SectionName = "Authentication:Jwt";

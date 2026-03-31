@@ -263,9 +263,8 @@ app.MapGet("/", () => Results.Ok(new
     .AllowAnonymous();
 
 app.Run();
+
 /// <summary>
 /// Exposes the application entry point for integration tests.
 /// </summary>
-
-
 public partial class Program;

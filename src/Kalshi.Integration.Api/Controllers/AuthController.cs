@@ -25,12 +25,22 @@ public sealed class AuthController : ControllerBase
     private readonly JwtOptions _jwtOptions;
     private readonly IWebHostEnvironment _environment;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuthController"/> class.
+    /// </summary>
+    /// <param name="jwtOptions">The JWT settings used to issue development tokens.</param>
+    /// <param name="environment">The current hosting environment.</param>
     public AuthController(IOptions<JwtOptions> jwtOptions, IWebHostEnvironment environment)
     {
         _jwtOptions = jwtOptions.Value;
         _environment = environment;
     }
 
+    /// <summary>
+    /// Issues a short-lived development token when the environment or configuration allows it.
+    /// </summary>
+    /// <param name="request">The optional role and subject overrides for the generated token.</param>
+    /// <returns>A bearer token payload suitable for local API testing.</returns>
     [HttpPost("dev-token")]
     [ProducesResponseType(typeof(DevTokenResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -107,17 +117,15 @@ public sealed class AuthController : ControllerBase
             || _jwtOptions.EnableDevelopmentTokenIssuance;
     }
 }
+
 /// <summary>
-/// Represents a request payload for dev token.
+/// Specifies the optional claims to include in a development token request.
 /// </summary>
-
-
 public sealed record DevTokenRequest(string[]? Roles, string? Subject);
+
 /// <summary>
-/// Represents a response payload for dev token.
+/// Describes the issued development token and its effective identity settings.
 /// </summary>
-
-
 public sealed record DevTokenResponse(
     string AccessToken,
     string TokenType,

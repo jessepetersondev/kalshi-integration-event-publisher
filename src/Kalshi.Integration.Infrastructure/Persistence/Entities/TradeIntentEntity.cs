@@ -3,8 +3,6 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Entities;
 /// <summary>
 /// Represents the persistence model for trade intent.
 /// </summary>
-
-
 public sealed class TradeIntentEntity
 {
     public Guid Id { get; set; }

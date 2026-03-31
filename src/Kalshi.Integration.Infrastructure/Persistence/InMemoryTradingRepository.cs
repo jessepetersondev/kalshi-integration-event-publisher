@@ -8,10 +8,8 @@ using Kalshi.Integration.Domain.TradeIntents;
 namespace Kalshi.Integration.Infrastructure.Persistence;
 
 /// <summary>
-/// Provides persistence operations for in memory trading.
+/// Provides an in-memory trading repository for local development and tests.
 /// </summary>
-
-
 public sealed class InMemoryTradingRepository : ITradeIntentRepository, IOrderRepository, IPositionSnapshotRepository
 {
     private readonly ConcurrentDictionary<Guid, TradeIntent> _tradeIntents = new();

@@ -5,10 +5,8 @@ using Kalshi.Integration.Contracts.Positions;
 namespace Kalshi.Integration.Application.Dashboard;
 
 /// <summary>
-/// Coordinates dashboard operations.
+/// Builds the operator-facing read models used by the dashboard endpoints.
 /// </summary>
-
-
 public sealed class DashboardService
 {
     private readonly IOrderRepository _orderRepository;
@@ -16,6 +14,13 @@ public sealed class DashboardService
     private readonly IOperationalIssueStore _issueStore;
     private readonly IAuditRecordStore _auditRecordStore;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DashboardService"/> class.
+    /// </summary>
+    /// <param name="orderRepository">The repository used to read orders and execution history.</param>
+    /// <param name="positionSnapshotRepository">The repository used to read position snapshots.</param>
+    /// <param name="issueStore">The store used to read recent operational issues.</param>
+    /// <param name="auditRecordStore">The store used to read audit records.</param>
     public DashboardService(
         IOrderRepository orderRepository,
         IPositionSnapshotRepository positionSnapshotRepository,

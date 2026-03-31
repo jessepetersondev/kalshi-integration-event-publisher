@@ -22,6 +22,13 @@ public sealed class TradingService
     private readonly IPositionSnapshotRepository _positionSnapshotRepository;
     private readonly RiskEvaluator _riskEvaluator;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradingService"/> class.
+    /// </summary>
+    /// <param name="tradeIntentRepository">The repository used to persist trade intents.</param>
+    /// <param name="orderRepository">The repository used to persist orders and execution events.</param>
+    /// <param name="positionSnapshotRepository">The repository used to update position snapshots.</param>
+    /// <param name="riskEvaluator">The risk evaluator applied before creating a trade intent.</param>
     public TradingService(
         ITradeIntentRepository tradeIntentRepository,
         IOrderRepository orderRepository,

@@ -3,10 +3,8 @@ using Kalshi.Integration.Application.Operations;
 namespace Kalshi.Integration.Application.Abstractions;
 
 /// <summary>
-/// Provides storage operations for i audit record.
+/// Persists audit records that describe accepted, rejected, and replayed operations.
 /// </summary>
-
-
 public interface IAuditRecordStore
 {
     Task AddAsync(AuditRecord auditRecord, CancellationToken cancellationToken = default);

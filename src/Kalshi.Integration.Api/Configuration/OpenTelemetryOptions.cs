@@ -3,10 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Kalshi.Integration.Api.Configuration;
 
 /// <summary>
-/// Represents configuration for open telemetry.
+/// Configures OpenTelemetry enrichment and exporter behavior for the API.
 /// </summary>
-
-
 public sealed class OpenTelemetryOptions
 {
     public const string SectionName = "OpenTelemetry";

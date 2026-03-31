@@ -7,10 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Kalshi.Integration.Api.Controllers;
 
 /// <summary>
-/// Exposes HTTP endpoints for positions.
+/// Returns operator-facing position snapshots derived from execution state.
 /// </summary>
-
-
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/positions")]
@@ -18,11 +16,20 @@ public sealed class PositionsController : ControllerBase
 {
     private readonly TradingQueryService _tradingQueryService;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PositionsController"/> class.
+    /// </summary>
+    /// <param name="tradingQueryService">The service that reads position projections.</param>
     public PositionsController(TradingQueryService tradingQueryService)
     {
         _tradingQueryService = tradingQueryService;
     }
 
+    /// <summary>
+    /// Returns the latest position snapshot for each tracked ticker and side.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>The current portfolio positions.</returns>
     [HttpGet]
     [Authorize(Policy = "operations.read")]
     [ProducesResponseType(typeof(IReadOnlyList<PositionResponse>), StatusCodes.Status200OK)]

@@ -6,16 +6,20 @@ using Microsoft.Extensions.Options;
 namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 
 /// <summary>
-/// Provides access to node gateway.
+/// Calls the node gateway API and normalizes its readiness results for the publisher.
 /// </summary>
-
-
 public sealed partial class NodeGatewayClient : INodeGatewayClient
 {
     private readonly HttpClient _httpClient;
     private readonly NodeGatewayOptions _options;
     private readonly ILogger<NodeGatewayClient> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NodeGatewayClient"/> class.
+    /// </summary>
+    /// <param name="httpClient">The HTTP client configured for node gateway requests.</param>
+    /// <param name="options">The node gateway integration settings.</param>
+    /// <param name="logger">The logger for outbound dependency telemetry.</param>
     public NodeGatewayClient(HttpClient httpClient, IOptions<NodeGatewayOptions> options, ILogger<NodeGatewayClient> logger)
     {
         _httpClient = httpClient;

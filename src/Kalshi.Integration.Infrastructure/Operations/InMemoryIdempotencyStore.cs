@@ -7,8 +7,6 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Provides storage operations for in memory idempotency.
 /// </summary>
-
-
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
     private readonly ConcurrentDictionary<string, IdempotencyRecord> _records = new(StringComparer.Ordinal);

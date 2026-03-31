@@ -16,8 +16,6 @@ namespace Kalshi.Integration.Infrastructure;
 /// <summary>
 /// Registers infrastructure services, integrations, and persistence components with the dependency injection container.
 /// </summary>
-
-
 public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)

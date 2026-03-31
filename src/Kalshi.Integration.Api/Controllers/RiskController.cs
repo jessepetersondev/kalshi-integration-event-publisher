@@ -7,10 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Kalshi.Integration.Api.Controllers;
 
 /// <summary>
-/// Exposes HTTP endpoints for risk.
+/// Evaluates proposed trade intents against the publisher's configured risk controls.
 /// </summary>
-
-
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/risk")]
@@ -18,11 +16,21 @@ public sealed class RiskController : ControllerBase
 {
     private readonly RiskEvaluator _riskEvaluator;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RiskController"/> class.
+    /// </summary>
+    /// <param name="riskEvaluator">The service that evaluates trade-intent risk.</param>
     public RiskController(RiskEvaluator riskEvaluator)
     {
         _riskEvaluator = riskEvaluator;
     }
 
+    /// <summary>
+    /// Validates a proposed trade intent without creating any trading state.
+    /// </summary>
+    /// <param name="request">The trade intent to evaluate.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>The risk decision that would be applied to the request.</returns>
     [HttpPost("validate")]
     [Authorize(Policy = "trading.write")]
     [ProducesResponseType(typeof(RiskDecisionResponse), StatusCodes.Status200OK)]

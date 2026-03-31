@@ -11,10 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace Kalshi.Integration.Infrastructure.Persistence;
 
 /// <summary>
-/// Provides persistence operations for ef trading.
+/// Implements trading persistence on top of Entity Framework Core.
 /// </summary>
-
-
 public sealed class EfTradingRepository : ITradeIntentRepository, IOrderRepository, IPositionSnapshotRepository
 {
     private static readonly Action<ILogger, string, string, double, Exception?> DependencyCallSucceeded =
@@ -32,6 +30,11 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
     private readonly KalshiIntegrationDbContext _dbContext;
     private readonly ILogger<EfTradingRepository> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EfTradingRepository"/> class.
+    /// </summary>
+    /// <param name="dbContext">The database context used for trading persistence.</param>
+    /// <param name="logger">The logger used for persistence diagnostics.</param>
     public EfTradingRepository(KalshiIntegrationDbContext dbContext, ILogger<EfTradingRepository> logger)
     {
         _dbContext = dbContext;

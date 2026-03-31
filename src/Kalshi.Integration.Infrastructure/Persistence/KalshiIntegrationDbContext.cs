@@ -4,12 +4,14 @@ using Microsoft.EntityFrameworkCore;
 namespace Kalshi.Integration.Infrastructure.Persistence;
 
 /// <summary>
-/// Represents kalshi integration db context.
+/// Represents the Entity Framework Core database context used by the publisher's persistence layer.
 /// </summary>
-
-
 public sealed class KalshiIntegrationDbContext : DbContext
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KalshiIntegrationDbContext"/> class.
+    /// </summary>
+    /// <param name="options">The database-context options supplied by Entity Framework Core.</param>
     public KalshiIntegrationDbContext(DbContextOptions<KalshiIntegrationDbContext> options) : base(options)
     {
     }

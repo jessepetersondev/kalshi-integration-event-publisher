@@ -6,13 +6,16 @@ namespace Kalshi.Integration.Api.Infrastructure;
 /// <summary>
 /// Applies request timing concerns to the ASP.NET Core request pipeline.
 /// </summary>
-
-
 public sealed class RequestTimingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<RequestTimingMiddleware> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RequestTimingMiddleware"/> class.
+    /// </summary>
+    /// <param name="next">The next middleware in the request pipeline.</param>
+    /// <param name="logger">The logger used for request completion and failure events.</param>
     public RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
     {
         _next = next;
