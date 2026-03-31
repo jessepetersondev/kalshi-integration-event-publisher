@@ -1,5 +1,5 @@
-using System.Text;
 using System.Reflection;
+using System.Text;
 using Asp.Versioning;
 using Kalshi.Integration.Api.Configuration;
 using Kalshi.Integration.Api.Infrastructure;
