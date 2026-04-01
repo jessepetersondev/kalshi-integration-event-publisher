@@ -12,6 +12,12 @@ namespace Kalshi.Integration.Application;
 /// </summary>
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Registers application-layer services and configuration used by the publisher.
+    /// </summary>
+    /// <param name="services">The service collection being configured.</param>
+    /// <param name="configuration">The application configuration root.</param>
+    /// <returns>The updated service collection.</returns>
     public static IServiceCollection AddApplication(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<RiskOptions>()

@@ -22,6 +22,10 @@ public sealed class RequestTimingMiddleware
         _logger = logger;
     }
 
+    /// <summary>
+    /// Measures the current request, records HTTP telemetry, and logs success or failure details.
+    /// </summary>
+    /// <param name="httpContext">The HTTP context for the current request.</param>
     public async Task InvokeAsync(HttpContext httpContext)
     {
         var stopwatch = Stopwatch.StartNew();

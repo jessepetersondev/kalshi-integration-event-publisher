@@ -14,6 +14,11 @@ public static class HealthCheckResponseWriter
         WriteIndented = true,
     };
 
+    /// <summary>
+    /// Writes a <see cref="HealthReport"/> to the current response as formatted JSON.
+    /// </summary>
+    /// <param name="context">The HTTP context for the active health-check request.</param>
+    /// <param name="report">The health report to serialize.</param>
     public static async Task WriteJsonAsync(HttpContext context, HealthReport report)
     {
         context.Response.ContentType = "application/json";
