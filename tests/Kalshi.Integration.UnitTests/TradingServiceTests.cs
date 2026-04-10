@@ -77,6 +77,9 @@ public sealed class TradingServiceTests
             .Setup(x => x.GetTradeIntentAsync(tradeIntent.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(tradeIntent);
         orderRepository
+            .Setup(x => x.GetLatestOrderByTradeIntentIdAsync(tradeIntent.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Order?)null);
+        orderRepository
             .Setup(x => x.AddOrderAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
             .Callback<Order, CancellationToken>((order, _) => capturedOrder = order)
             .Returns(Task.CompletedTask);
@@ -133,6 +136,31 @@ public sealed class TradingServiceTests
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() => service.CreateOrderAsync(new CreateOrderRequest(Guid.NewGuid())));
         tradeIntentRepository.VerifyAll();
+    }
+
+    [Fact]
+    public async Task CreateOrderAsync_ShouldRejectDuplicateOrderForSameTradeIntent()
+    {
+        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout", "corr-order");
+        var existingOrder = new Order(tradeIntent);
+        var tradeIntentRepository = new Mock<ITradeIntentRepository>(MockBehavior.Strict);
+        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
+        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
+
+        tradeIntentRepository
+            .Setup(x => x.GetTradeIntentAsync(tradeIntent.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tradeIntent);
+        orderRepository
+            .Setup(x => x.GetLatestOrderByTradeIntentIdAsync(tradeIntent.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingOrder);
+
+        var service = CreateService(tradeIntentRepository.Object, orderRepository.Object, positionSnapshotRepository.Object);
+
+        var exception = await Assert.ThrowsAsync<DomainException>(() => service.CreateOrderAsync(new CreateOrderRequest(tradeIntent.Id)));
+
+        Assert.Contains("already has an order", exception.Message, StringComparison.OrdinalIgnoreCase);
+        tradeIntentRepository.VerifyAll();
+        orderRepository.VerifyAll();
     }
 
     [Fact]

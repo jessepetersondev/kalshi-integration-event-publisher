@@ -6,6 +6,7 @@ using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Orders;
+using Kalshi.Integration.Domain.Common;
 using Kalshi.Integration.Infrastructure.Messaging;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -166,6 +167,21 @@ public sealed class OrdersController : ControllerBase
                 cancellationToken);
 
             return Problem(title: "Trade intent not found", detail: exception.Message, statusCode: StatusCodes.Status404NotFound);
+        }
+        catch (DomainException exception)
+        {
+            _logger.LogWarning(exception, "Rejected duplicate order creation for trade intent {TradeIntentId}.", request.TradeIntentId);
+            await _auditRecordStore.AddAsync(
+                AuditRecord.Create(
+                    category: "trading",
+                    action: "order.conflict",
+                    outcome: "rejected",
+                    correlationId: correlationId,
+                    idempotencyKey: idempotencyKey,
+                    details: $"tradeIntentId={request.TradeIntentId}; reason={exception.Message}"),
+                cancellationToken);
+
+            return Problem(title: "Order already exists", detail: exception.Message, statusCode: StatusCodes.Status409Conflict);
         }
     }
 

@@ -93,6 +93,53 @@ public sealed class RiskEvaluatorTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task EvaluateTradeIntent_ShouldRejectDuplicateCancelForTargetPublisherOrderId()
+    {
+        var targetPublisherOrderId = Guid.NewGuid();
+        var existingCancelIntent = new TradeIntent(
+            "KXBTC",
+            null,
+            null,
+            null,
+            "Breakout",
+            TradeIntentActionType.Cancel,
+            "kalshi-btc-quant",
+            "cancel stale order",
+            "kalshi-btc-quant.bridge.v1",
+            targetPublisherOrderId: targetPublisherOrderId,
+            correlationId: "cancel-1");
+
+        var tradeIntentRepository = new Mock<ITradeIntentRepository>(MockBehavior.Strict);
+        tradeIntentRepository
+            .Setup(x => x.GetTradeIntentByCorrelationIdAsync("cancel-2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TradeIntent?)null);
+        tradeIntentRepository
+            .Setup(x => x.FindMatchingCancelTradeIntentAsync(targetPublisherOrderId, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingCancelIntent);
+
+        var evaluator = CreateEvaluator(tradeIntentRepository.Object, new RiskOptions());
+
+        var result = await evaluator.EvaluateTradeIntentAsync(new CreateTradeIntentRequest(
+            "KXBTC",
+            null,
+            null,
+            null,
+            "Breakout",
+            "cancel-2",
+            "cancel",
+            "kalshi-btc-quant",
+            "cancel stale order",
+            "kalshi-btc-quant.bridge.v1",
+            null,
+            null,
+            targetPublisherOrderId));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("A cancel request already exists for the target order.", result.Reasons);
+        tradeIntentRepository.VerifyAll();
+    }
+
     private static RiskEvaluator CreateEvaluator(ITradeIntentRepository tradeIntentRepository, RiskOptions options)
         => new(tradeIntentRepository, Options.Create(options));
 }

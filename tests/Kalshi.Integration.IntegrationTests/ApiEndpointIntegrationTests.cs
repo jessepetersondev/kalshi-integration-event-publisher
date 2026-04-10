@@ -118,6 +118,30 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     }
 
     [Fact]
+    public async Task PostOrder_ShouldRejectDuplicateOrderForSameTradeIntent()
+    {
+        var tradeIntentResponse = await _client.PostAsJsonAsync(
+            "/api/v1/trade-intents",
+            new CreateTradeIntentRequest("KXBTC-DUP-ORDER", "yes", 1, 0.45m, "Breakout", $"dup-order-{Guid.NewGuid():N}"));
+        tradeIntentResponse.EnsureSuccessStatusCode();
+
+        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+
+        var first = await PostJsonWithHeadersAsync(
+            "/api/v1/orders",
+            new CreateOrderRequest(tradeIntent!.Id),
+            ("idempotency-key", $"order-key-{Guid.NewGuid():N}"));
+        first.EnsureSuccessStatusCode();
+
+        var second = await PostJsonWithHeadersAsync(
+            "/api/v1/orders",
+            new CreateOrderRequest(tradeIntent.Id),
+            ("idempotency-key", $"order-key-{Guid.NewGuid():N}"));
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
+    [Fact]
     public async Task PostTradeIntent_ShouldReplayDuplicateIdempotencyKey()
     {
         var ticker = $"KXBTC-IDEMP-{Guid.NewGuid():N}".ToUpperInvariant();

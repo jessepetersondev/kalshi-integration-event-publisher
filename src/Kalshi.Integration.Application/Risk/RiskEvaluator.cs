@@ -100,6 +100,20 @@ public sealed class RiskEvaluator
             {
                 reasons.Add("Cancel actions require at least one target order reference.");
             }
+
+            if (actionType == TradeIntentActionType.Cancel)
+            {
+                var existingCancel = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
+                    request.TargetPublisherOrderId,
+                    request.TargetClientOrderId?.Trim(),
+                    request.TargetExternalOrderId?.Trim(),
+                    cancellationToken);
+
+                if (existingCancel is not null)
+                {
+                    reasons.Add("A cancel request already exists for the target order.");
+                }
+            }
         }
 
         if (string.IsNullOrWhiteSpace(request.OriginService))

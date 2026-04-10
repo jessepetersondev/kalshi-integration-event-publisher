@@ -83,6 +83,34 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
             return entity is null ? null : MapTradeIntent(entity);
         });
 
+    public Task<TradeIntent?> FindMatchingCancelTradeIntentAsync(
+        Guid? targetPublisherOrderId,
+        string? targetClientOrderId,
+        string? targetExternalOrderId,
+        CancellationToken cancellationToken = default)
+        => ExecuteDependencyCallAsync("trade-intents.find-matching-cancel", async () =>
+        {
+            var trimmedClientOrderId = string.IsNullOrWhiteSpace(targetClientOrderId) ? null : targetClientOrderId.Trim();
+            var trimmedExternalOrderId = string.IsNullOrWhiteSpace(targetExternalOrderId) ? null : targetExternalOrderId.Trim();
+
+            if (!targetPublisherOrderId.HasValue && trimmedClientOrderId is null && trimmedExternalOrderId is null)
+            {
+                return null;
+            }
+
+            var entity = await _dbContext.TradeIntents
+                .AsNoTracking()
+                .Where(x => x.ActionType == TradeIntentActionType.Cancel.ToString())
+                .Where(x =>
+                    (targetPublisherOrderId.HasValue && x.TargetPublisherOrderId == targetPublisherOrderId.Value)
+                    || (trimmedClientOrderId != null && x.TargetClientOrderId == trimmedClientOrderId)
+                    || (trimmedExternalOrderId != null && x.TargetExternalOrderId == trimmedExternalOrderId))
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return entity is null ? null : MapTradeIntent(entity);
+        });
+
     public Task AddOrderAsync(Order order, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.insert", async () =>
         {
@@ -126,6 +154,28 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
         => ExecuteDependencyCallAsync("orders.get-by-id", async () =>
         {
             var orderEntity = await _dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+            if (orderEntity is null)
+            {
+                return null;
+            }
+
+            var tradeIntentEntity = await _dbContext.TradeIntents.AsNoTracking().SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            return MapOrder(orderEntity, tradeIntentEntity);
+        });
+
+    public Task<Order?> GetLatestOrderByTradeIntentIdAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
+        => ExecuteDependencyCallAsync("orders.get-latest-by-trade-intent-id", async () =>
+        {
+            var orderEntities = await _dbContext.Orders
+                .AsNoTracking()
+                .Where(x => x.TradeIntentId == tradeIntentId)
+                .ToListAsync(cancellationToken);
+
+            var orderEntity = orderEntities
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+
             if (orderEntity is null)
             {
                 return null;

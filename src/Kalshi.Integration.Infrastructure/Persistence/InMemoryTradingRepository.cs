@@ -37,6 +37,23 @@ public sealed class InMemoryTradingRepository : ITradeIntentRepository, IOrderRe
         return Task.FromResult(tradeIntent);
     }
 
+    public Task<TradeIntent?> FindMatchingCancelTradeIntentAsync(
+        Guid? targetPublisherOrderId,
+        string? targetClientOrderId,
+        string? targetExternalOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        var tradeIntent = _tradeIntents.Values
+            .Where(x => x.ActionType == TradeIntentActionType.Cancel)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefault(x =>
+                (targetPublisherOrderId.HasValue && x.TargetPublisherOrderId == targetPublisherOrderId.Value)
+                || (!string.IsNullOrWhiteSpace(targetClientOrderId) && string.Equals(x.TargetClientOrderId, targetClientOrderId, StringComparison.Ordinal))
+                || (!string.IsNullOrWhiteSpace(targetExternalOrderId) && string.Equals(x.TargetExternalOrderId, targetExternalOrderId, StringComparison.Ordinal)));
+
+        return Task.FromResult(tradeIntent);
+    }
+
     public Task AddOrderAsync(Order order, CancellationToken cancellationToken = default)
     {
         _orders[order.Id] = order;
@@ -52,6 +69,17 @@ public sealed class InMemoryTradingRepository : ITradeIntentRepository, IOrderRe
     public Task<Order?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         _orders.TryGetValue(orderId, out var order);
+        return Task.FromResult(order);
+    }
+
+    public Task<Order?> GetLatestOrderByTradeIntentIdAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
+    {
+        var order = _orders.Values
+            .Where(x => x.TradeIntent.Id == tradeIntentId)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+
         return Task.FromResult(order);
     }
 

@@ -10,4 +10,9 @@ public interface ITradeIntentRepository
     Task AddTradeIntentAsync(TradeIntent tradeIntent, CancellationToken cancellationToken = default);
     Task<TradeIntent?> GetTradeIntentAsync(Guid tradeIntentId, CancellationToken cancellationToken = default);
     Task<TradeIntent?> GetTradeIntentByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
+    Task<TradeIntent?> FindMatchingCancelTradeIntentAsync(
+        Guid? targetPublisherOrderId,
+        string? targetClientOrderId,
+        string? targetExternalOrderId,
+        CancellationToken cancellationToken = default);
 }

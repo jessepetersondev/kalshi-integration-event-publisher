@@ -105,6 +105,12 @@ public sealed class TradingService
             throw new KeyNotFoundException($"Trade intent '{request.TradeIntentId}' was not found.");
         }
 
+        var existingOrder = await _orderRepository.GetLatestOrderByTradeIntentIdAsync(tradeIntent.Id, cancellationToken);
+        if (existingOrder is not null)
+        {
+            throw new DomainException($"Trade intent '{request.TradeIntentId}' already has an order.");
+        }
+
         var order = new Order(tradeIntent);
         await _orderRepository.AddOrderAsync(order, cancellationToken);
         await _orderRepository.AddOrderEventAsync(new ExecutionEvent(order.Id, order.CurrentStatus, order.FilledQuantity, order.CreatedAt), cancellationToken);
