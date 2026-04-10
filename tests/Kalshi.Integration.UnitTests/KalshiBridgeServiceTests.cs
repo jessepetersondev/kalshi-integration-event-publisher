@@ -423,6 +423,7 @@ public sealed class KalshiBridgeServiceTests
         var bridge = new KalshiBridgeService(
             apiClient.Object,
             repository,
+            repository,
             applicationEventPublisher ?? publisher,
             tradingService,
             queryService,

@@ -31,6 +31,7 @@ public sealed class KalshiBridgeService
 
     private readonly IKalshiApiClient _kalshiApiClient;
     private readonly IOrderRepository _orderRepository;
+    private readonly ITradeIntentRepository _tradeIntentRepository;
     private readonly IApplicationEventPublisher _applicationEventPublisher;
     private readonly TradingService _tradingService;
     private readonly TradingQueryService _tradingQueryService;
@@ -41,6 +42,7 @@ public sealed class KalshiBridgeService
     /// </summary>
     /// <param name="kalshiApiClient">The direct Kalshi API client.</param>
     /// <param name="orderRepository">The repository used to find related cancel commands.</param>
+    /// <param name="tradeIntentRepository">The repository used to find matching cancel trade-intents.</param>
     /// <param name="applicationEventPublisher">The publisher used to emit order commands to RabbitMQ.</param>
     /// <param name="tradingService">The publisher trading workflow service.</param>
     /// <param name="tradingQueryService">The publisher trading query service.</param>
@@ -48,6 +50,7 @@ public sealed class KalshiBridgeService
     public KalshiBridgeService(
         IKalshiApiClient kalshiApiClient,
         IOrderRepository orderRepository,
+        ITradeIntentRepository tradeIntentRepository,
         IApplicationEventPublisher applicationEventPublisher,
         TradingService tradingService,
         TradingQueryService tradingQueryService,
@@ -55,6 +58,7 @@ public sealed class KalshiBridgeService
     {
         _kalshiApiClient = kalshiApiClient;
         _orderRepository = orderRepository;
+        _tradeIntentRepository = tradeIntentRepository;
         _applicationEventPublisher = applicationEventPublisher;
         _tradingService = tradingService;
         _tradingQueryService = tradingQueryService;
@@ -238,12 +242,18 @@ public sealed class KalshiBridgeService
 
     private async Task<OrderResponse?> GetLatestCancelOrderAsync(Guid targetPublisherOrderId, CancellationToken cancellationToken)
     {
-        var cancelOrder = (await _orderRepository.GetOrdersAsync(cancellationToken))
-            .Where(order => order.TradeIntent.ActionType == TradeIntentActionType.Cancel
-                && order.TradeIntent.TargetPublisherOrderId == targetPublisherOrderId)
-            .OrderByDescending(order => order.UpdatedAt)
-            .ThenByDescending(order => order.CreatedAt)
-            .FirstOrDefault();
+        var cancelTradeIntent = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
+            targetPublisherOrderId,
+            targetClientOrderId: null,
+            targetExternalOrderId: null,
+            cancellationToken);
+
+        if (cancelTradeIntent is null)
+        {
+            return null;
+        }
+
+        var cancelOrder = await _orderRepository.GetLatestOrderByTradeIntentIdAsync(cancelTradeIntent.Id, cancellationToken);
 
         return cancelOrder is null
             ? null
