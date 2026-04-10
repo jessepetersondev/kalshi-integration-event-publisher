@@ -1,5 +1,6 @@
 const endpoints = {
   orders: '/api/v1/dashboard/orders',
+  outcomes: filters => `/api/v1/orders/outcomes?${new URLSearchParams(filters).toString()}`,
   positions: '/api/v1/dashboard/positions',
   events: '/api/v1/dashboard/events?limit=50',
   audit: (category, hours, limit) => `/api/v1/dashboard/audit-records?hours=${encodeURIComponent(hours)}&limit=${encodeURIComponent(limit)}${category ? `&category=${encodeURIComponent(category)}` : ''}`,
@@ -8,6 +9,8 @@ const endpoints = {
 };
 
 const accessTokenStorageKey = 'kalshi.integration.dashboard.access-token';
+const accessTokenSourceStorageKey = 'kalshi.integration.dashboard.access-token-source';
+let developmentTokenPromise = null;
 
 function setStatus(id, text) {
   document.getElementById(id).textContent = text;
@@ -19,6 +22,10 @@ function setText(id, text) {
 
 function setVisibility(id, visible) {
   document.getElementById(id).classList.toggle('hidden', !visible);
+}
+
+function getTrimmedValue(id) {
+  return document.getElementById(id)?.value?.trim() || '';
 }
 
 function fmtDate(value) {
@@ -55,6 +62,24 @@ function titleCase(value) {
     .replace(/\b\w/g, char => char.toUpperCase());
 }
 
+function buildOutcomeQuery() {
+  const filters = {
+    limit: '100',
+  };
+
+  const orderId = getTrimmedValue('outcome-order-id');
+  const correlationId = getTrimmedValue('outcome-correlation-id');
+  const originService = getTrimmedValue('outcome-origin-service');
+  const outcomeState = document.getElementById('outcome-state')?.value?.trim() || '';
+
+  if (orderId) filters.orderId = orderId;
+  if (correlationId) filters.correlationId = correlationId;
+  if (originService) filters.originService = originService;
+  if (outcomeState) filters.outcomeState = outcomeState;
+
+  return filters;
+}
+
 function renderBadge(value, kind, fallback = '—') {
   const label = value ? titleCase(value) : fallback;
   const token = normalizeToken(value || fallback);
@@ -65,17 +90,32 @@ function getAccessToken() {
   return localStorage.getItem(accessTokenStorageKey)?.trim() || '';
 }
 
-function saveAccessToken(value) {
+function getAccessTokenSource() {
+  return localStorage.getItem(accessTokenSourceStorageKey)?.trim() || '';
+}
+
+function saveAccessToken(value, { source = 'manual', statusText } = {}) {
   const token = String(value ?? '').trim();
   if (token) {
     localStorage.setItem(accessTokenStorageKey, token);
+    localStorage.setItem(accessTokenSourceStorageKey, source);
   } else {
     localStorage.removeItem(accessTokenStorageKey);
+    localStorage.removeItem(accessTokenSourceStorageKey);
   }
 
   const field = document.getElementById('access-token');
   if (field) field.value = token;
-  setAuthStatus(token ? 'Token saved locally.' : 'No token saved yet.');
+  setAuthStatus(statusText ?? (token ? 'Token saved locally.' : 'No token saved yet.'));
+}
+
+function clearAccessToken(statusText = 'No token saved yet.') {
+  localStorage.removeItem(accessTokenStorageKey);
+  localStorage.removeItem(accessTokenSourceStorageKey);
+
+  const field = document.getElementById('access-token');
+  if (field) field.value = '';
+  setAuthStatus(statusText);
 }
 
 function setAuthStatus(text) {
@@ -88,7 +128,8 @@ function createAuthorizedHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function fetchJson(url, options = {}) {
+async function fetchJson(url, options = {}, authOptions = {}) {
+  const { allowTokenRefresh = true } = authOptions;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -96,6 +137,17 @@ async function fetchJson(url, options = {}) {
       ...(options.headers || {}),
     },
   });
+
+  if (response.status === 401 && allowTokenRefresh) {
+    const replacementToken = await ensureDevelopmentAccessToken({
+      forceRefresh: true,
+      silent: true,
+    });
+
+    if (replacementToken) {
+      return fetchJson(url, options, { allowTokenRefresh: false });
+    }
+  }
 
   if (response.status === 401) {
     throw new Error('Unauthorized. Save a valid bearer token or issue a local dev token first.');
@@ -112,17 +164,67 @@ async function fetchJson(url, options = {}) {
   return response.json();
 }
 
-async function issueDevelopmentToken() {
-  const response = await fetchJson(endpoints.devToken, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ roles: ['admin', 'operator', 'trader', 'integration'], subject: 'dashboard-operator' }),
-  });
+async function requestDevelopmentToken({ silent = false, forceRefresh = false } = {}) {
+  if (developmentTokenPromise && !forceRefresh) {
+    return developmentTokenPromise;
+  }
 
-  saveAccessToken(response.accessToken);
-  setAuthStatus('Local development token issued and saved.');
+  developmentTokenPromise = (async () => {
+    const response = await fetch(endpoints.devToken, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ roles: ['admin', 'operator', 'trader', 'integration'], subject: 'dashboard-operator' }),
+    });
+
+    if (response.status === 404) {
+      if (!silent) {
+        setAuthStatus('Local development token issuance is disabled for this environment.');
+      }
+
+      return '';
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (!silent) {
+        setAuthStatus(`Unable to issue local development token (${response.status}).`);
+      }
+
+      throw new Error(errorText || `Unable to issue local development token (${response.status}).`);
+    }
+
+    const payload = await response.json();
+    saveAccessToken(payload.accessToken, {
+      source: 'development',
+      statusText: silent
+        ? 'Local development token issued automatically.'
+        : 'Local development token issued and saved.',
+    });
+    return payload.accessToken;
+  })()
+    .catch(error => {
+      if (!silent) {
+        setAuthStatus(error.message || 'Unable to issue local development token.');
+      }
+
+      return '';
+    })
+    .finally(() => {
+      developmentTokenPromise = null;
+    });
+
+  return developmentTokenPromise;
+}
+
+async function ensureDevelopmentAccessToken({ forceRefresh = false, silent = false } = {}) {
+  const existingToken = getAccessToken();
+  if (existingToken && !forceRefresh) {
+    return existingToken;
+  }
+
+  return requestDevelopmentToken({ silent, forceRefresh });
 }
 
 async function loadCollection({ url, bodyId, emptyId, errorId, statusId, emptyMessage, renderRow }) {
@@ -174,6 +276,39 @@ async function loadOrders() {
         <td>${renderBadge(item.status, 'status')}</td>
         <td>${escapeHtml(fmtNumber(item.filledQuantity))}</td>
         <td>${escapeHtml(fmtDate(item.updatedAt))}</td>
+      </tr>`
+  });
+}
+
+async function loadOutcomes() {
+  return loadCollection({
+    url: endpoints.outcomes(buildOutcomeQuery()),
+    bodyId: 'outcomes-body',
+    emptyId: 'outcomes-empty',
+    errorId: 'outcomes-error',
+    statusId: 'outcomes-status',
+    emptyMessage: 'No execution outcomes match the current filters.',
+    renderRow: item => `
+      <tr>
+        <td>${escapeHtml(fmtDate(item.updatedAt))}</td>
+        <td>
+          <div class="monospace">${escapeHtml(item.id)}</div>
+          <div class="secondary-text">${escapeHtml(item.externalOrderId || '—')}</div>
+        </td>
+        <td>
+          <div class="primary-text">${escapeHtml(item.originService || '—')}</div>
+          <div class="secondary-text">${escapeHtml(titleCase(item.actionType))}</div>
+        </td>
+        <td class="monospace">${escapeHtml(item.correlationId)}</td>
+        <td>
+          <div class="primary-text">${escapeHtml(item.ticker)}</div>
+          <div class="secondary-text">${escapeHtml(titleCase(item.side || '—'))} · ${escapeHtml(fmtNumber(item.quantity))} @ ${escapeHtml(item.limitPrice ?? '—')}</div>
+        </td>
+        <td>${renderBadge(item.outcomeState, 'outcome')}</td>
+        <td>${renderBadge(item.status, 'status')}</td>
+        <td>${renderBadge(item.publishStatus, 'publish')}</td>
+        <td class="monospace">${escapeHtml(item.lastResultStatus || '—')}</td>
+        <td class="wrap-details">${escapeHtml(item.lastResultMessage || '—')}</td>
       </tr>`
   });
 }
@@ -282,18 +417,39 @@ function updateSummary({ orders, positions, events, issues }) {
 }
 
 async function refreshAll() {
-  const [orders, positions, events, auditRecords, issues] = await Promise.all([
+  const [orders, outcomes, positions, events, auditRecords, issues] = await Promise.all([
     loadOrders(),
+    loadOutcomes(),
     loadPositions(),
     loadEvents(),
     loadAuditRecords(),
     loadIssues(),
   ]);
 
-  updateSummary({ orders, positions, events, issues, auditRecords });
+  updateSummary({ orders, outcomes, positions, events, issues, auditRecords });
 }
 
+document.getElementById('save-token').addEventListener('click', async () => {
+  const field = document.getElementById('access-token');
+  saveAccessToken(field?.value ?? '', {
+    source: 'manual',
+    statusText: field?.value?.trim() ? 'Manual bearer token saved locally.' : 'No token saved yet.',
+  });
+  await refreshAll();
+});
+
+document.getElementById('clear-token').addEventListener('click', async () => {
+  clearAccessToken('Saved token cleared. The dashboard will auto-issue a local dev token when available.');
+  await refreshAll();
+});
+
+document.getElementById('issue-dev-token').addEventListener('click', async () => {
+  await requestDevelopmentToken({ silent: false, forceRefresh: true });
+  await refreshAll();
+});
+
 document.getElementById('refresh-all').addEventListener('click', refreshAll);
+document.getElementById('outcomes-refresh').addEventListener('click', loadOutcomes);
 document.getElementById('audit-refresh').addEventListener('click', async () => {
   const [orders, positions, events, issues] = await Promise.all([loadOrders(), loadPositions(), loadEvents(), loadIssues()]);
   const auditRecords = await loadAuditRecords();
@@ -305,4 +461,17 @@ document.getElementById('issues-refresh').addEventListener('click', async () => 
   updateSummary({ orders, positions, events, issues, auditRecords });
 });
 
-refreshAll();
+async function bootstrapDashboard() {
+  const field = document.getElementById('access-token');
+  if (field) {
+    field.value = getAccessToken();
+  }
+
+  if (!getAccessToken() || getAccessTokenSource() === 'development') {
+    await ensureDevelopmentAccessToken({ silent: true, forceRefresh: !getAccessToken() });
+  }
+
+  await refreshAll();
+}
+
+bootstrapDashboard();

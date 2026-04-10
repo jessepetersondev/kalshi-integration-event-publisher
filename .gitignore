@@ -4,12 +4,21 @@ obj/
 *.user
 *.suo
 *.db
+*.db.bak*
 *.db-shm
 *.db-wal
 *.log
+*.trx
 TestResults/
 coverage/
 coverage.*
+packages/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
 
 # Local/untracked environment overrides
 .env

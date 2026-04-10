@@ -15,6 +15,8 @@ public sealed class InMemoryTradingRepository : ITradeIntentRepository, IOrderRe
     private readonly ConcurrentDictionary<Guid, TradeIntent> _tradeIntents = new();
     private readonly ConcurrentDictionary<Guid, Order> _orders = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentQueue<ExecutionEvent>> _orderEvents = new();
+    private readonly ConcurrentDictionary<Guid, ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)>> _orderLifecycleEvents = new();
+    private readonly ConcurrentDictionary<Guid, (Guid? OrderId, string Name, string? CorrelationId, string? IdempotencyKey, string PayloadJson, DateTimeOffset OccurredAt)> _resultEvents = new();
     private readonly ConcurrentDictionary<string, PositionSnapshot> _positions = new();
 
     public Task AddTradeIntentAsync(TradeIntent tradeIntent, CancellationToken cancellationToken = default)
@@ -73,6 +75,29 @@ public sealed class InMemoryTradingRepository : ITradeIntentRepository, IOrderRe
         }
 
         return Task.FromResult<IReadOnlyList<ExecutionEvent>>(Array.Empty<ExecutionEvent>());
+    }
+
+    public Task AddOrderLifecycleEventAsync(Guid orderId, string stage, string? details, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+    {
+        var queue = _orderLifecycleEvents.GetOrAdd(orderId, _ => new ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
+        queue.Enqueue((stage, details, occurredAt));
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>> GetOrderLifecycleEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
+    {
+        if (_orderLifecycleEvents.TryGetValue(orderId, out var queue))
+        {
+            return Task.FromResult<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>>(queue.ToArray());
+        }
+
+        return Task.FromResult<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>>(Array.Empty<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
+    }
+
+    public Task<bool> TryAddResultEventAsync(Guid resultEventId, Guid? orderId, string name, string? correlationId, string? idempotencyKey, string payloadJson, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+    {
+        var added = _resultEvents.TryAdd(resultEventId, (orderId, name, correlationId, idempotencyKey, payloadJson, occurredAt));
+        return Task.FromResult(added);
     }
 
     public Task UpsertPositionSnapshotAsync(PositionSnapshot positionSnapshot, CancellationToken cancellationToken = default)

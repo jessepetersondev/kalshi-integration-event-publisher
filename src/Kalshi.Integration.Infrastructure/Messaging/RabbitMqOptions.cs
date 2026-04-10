@@ -36,5 +36,25 @@ public sealed class RabbitMqOptions
     public bool Mandatory { get; set; }
 
     [Required]
+    public string PublisherResultsQueue { get; set; } = "kalshi.integration.event-publisher.results";
+
+    [Required]
+    public string PublisherResultsDeadLetterQueue { get; set; } = "kalshi.integration.event-publisher.results.dlq";
+
+    [Required]
+    public string ResultsRoutingKeyBinding { get; set; } = "kalshi.integration.results.#";
+
+    [Range(0, 10)]
+    public int PublishRetryAttempts { get; set; } = 2;
+
+    [Range(1, 30000)]
+    public int PublishRetryDelayMilliseconds { get; set; } = 250;
+
+    [Range(1, 30000)]
+    public int PublishConfirmTimeoutMilliseconds { get; set; } = 5000;
+
+    public bool EnableResultConsumer { get; set; } = true;
+
+    [Required]
     public string ClientProvidedName { get; set; } = "kalshi-integration-event-publisher";
 }

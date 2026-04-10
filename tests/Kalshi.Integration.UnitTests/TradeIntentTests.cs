@@ -62,4 +62,71 @@ public sealed class TradeIntentTests
     {
         Assert.Throws<DomainException>(() => new TradeIntent("KXBTC", TradeSide.No, 1, 0.50m, strategyName));
     }
+
+    [Fact]
+    public void Constructor_ShouldNormalizeMigratedActionFields()
+    {
+        var targetPublisherOrderId = Guid.NewGuid();
+
+        var intent = new TradeIntent(
+            " kxbtc ",
+            TradeSide.Yes,
+            2,
+            0.43219m,
+            " Weather Alpha ",
+            TradeIntentActionType.Exit,
+            " kalshi-weather-quant ",
+            " unwind winner ",
+            " weather-quant-command.v1 ",
+            targetPositionTicker: " kxbtc ",
+            targetPositionSide: TradeSide.No,
+            targetPublisherOrderId: targetPublisherOrderId,
+            targetClientOrderId: " client-1 ",
+            targetExternalOrderId: " external-1 ",
+            correlationId: " corr-1 ");
+
+        Assert.Equal(TradeIntentActionType.Exit, intent.ActionType);
+        Assert.Equal("KXBTC", intent.Ticker);
+        Assert.Equal("Weather Alpha", intent.StrategyName);
+        Assert.Equal("kalshi-weather-quant", intent.OriginService);
+        Assert.Equal("unwind winner", intent.DecisionReason);
+        Assert.Equal("weather-quant-command.v1", intent.CommandSchemaVersion);
+        Assert.Equal("KXBTC", intent.TargetPositionTicker);
+        Assert.Equal(TradeSide.No, intent.TargetPositionSide);
+        Assert.Equal(targetPublisherOrderId, intent.TargetPublisherOrderId);
+        Assert.Equal("client-1", intent.TargetClientOrderId);
+        Assert.Equal("external-1", intent.TargetExternalOrderId);
+        Assert.Equal("corr-1", intent.CorrelationId);
+        Assert.Equal(0.4322m, intent.LimitPrice);
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectExitWithoutTargetPosition()
+    {
+        Assert.Throws<DomainException>(() => new TradeIntent(
+            "KXBTC",
+            TradeSide.Yes,
+            1,
+            0.50m,
+            "Exit",
+            TradeIntentActionType.Exit,
+            "kalshi-weather-quant",
+            "take profit",
+            "weather-quant-command.v1"));
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectCancelWithoutTargetReference()
+    {
+        Assert.Throws<DomainException>(() => new TradeIntent(
+            "KXBTC",
+            null,
+            null,
+            null,
+            "Cancel",
+            TradeIntentActionType.Cancel,
+            "kalshi-weather-quant",
+            "cancel stale order",
+            "weather-quant-command.v1"));
+    }
 }

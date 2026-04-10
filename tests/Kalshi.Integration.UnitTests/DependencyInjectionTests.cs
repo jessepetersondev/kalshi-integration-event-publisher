@@ -79,14 +79,16 @@ public sealed class DependencyInjectionTests
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<ITradeIntentRepository>());
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<IOrderRepository>());
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<IPositionSnapshotRepository>());
-            Assert.IsType<InMemoryOperationalIssueStore>(provider.GetRequiredService<IOperationalIssueStore>());
-            Assert.IsType<InMemoryAuditRecordStore>(provider.GetRequiredService<IAuditRecordStore>());
-            Assert.IsType<InMemoryIdempotencyStore>(provider.GetRequiredService<IIdempotencyStore>());
+            Assert.IsType<EfOperationalIssueStore>(scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>());
+            Assert.IsType<EfAuditRecordStore>(scope.ServiceProvider.GetRequiredService<IAuditRecordStore>());
+            Assert.IsType<EfIdempotencyStore>(scope.ServiceProvider.GetRequiredService<IIdempotencyStore>());
 
             var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+            var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<KalshiIntegrationDbContext>>();
             var databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
             Assert.NotNull(dbContext);
+            Assert.NotNull(dbContextFactory);
             Assert.Contains("Sqlite", dbContext.Database.ProviderName, StringComparison.Ordinal);
             Assert.Equal(DatabaseProviders.Sqlite, databaseOptions.Provider);
             Assert.True(databaseOptions.ApplyMigrationsOnStartup);

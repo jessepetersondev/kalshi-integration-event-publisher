@@ -3,11 +3,13 @@ using Kalshi.Integration.Application.Risk;
 using Kalshi.Integration.Contracts.Integrations;
 using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.TradeIntents;
+using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Domain.Common;
 using Kalshi.Integration.Domain.Executions;
 using Kalshi.Integration.Domain.Orders;
 using Kalshi.Integration.Domain.Positions;
 using Kalshi.Integration.Domain.TradeIntents;
+using System.Text.Json;
 
 namespace Kalshi.Integration.Application.Trading;
 
@@ -51,10 +53,19 @@ public sealed class TradingService
 
         var tradeIntent = new TradeIntent(
             request.Ticker,
-            ParseSide(request.Side),
+            ParseOptionalSide(request.Side),
             request.Quantity,
             request.LimitPrice,
             request.StrategyName,
+            ParseActionType(request.ActionType),
+            request.OriginService,
+            request.DecisionReason,
+            request.CommandSchemaVersion,
+            request.TargetPositionTicker,
+            ParseOptionalSide(request.TargetPositionSide),
+            request.TargetPublisherOrderId,
+            request.TargetClientOrderId,
+            request.TargetExternalOrderId,
             request.CorrelationId);
 
         await _tradeIntentRepository.AddTradeIntentAsync(tradeIntent, cancellationToken);
@@ -62,11 +73,20 @@ public sealed class TradingService
         return new TradeIntentResponse(
             tradeIntent.Id,
             tradeIntent.Ticker,
-            tradeIntent.Side.ToString().ToLowerInvariant(),
+            tradeIntent.Side?.ToString().ToLowerInvariant(),
             tradeIntent.Quantity,
             tradeIntent.LimitPrice,
             tradeIntent.StrategyName,
             tradeIntent.CorrelationId,
+            tradeIntent.ActionType.ToString().ToLowerInvariant(),
+            tradeIntent.OriginService,
+            tradeIntent.DecisionReason,
+            tradeIntent.CommandSchemaVersion,
+            tradeIntent.TargetPositionTicker,
+            tradeIntent.TargetPositionSide?.ToString().ToLowerInvariant(),
+            tradeIntent.TargetPublisherOrderId,
+            tradeIntent.TargetClientOrderId,
+            tradeIntent.TargetExternalOrderId,
             tradeIntent.CreatedAt,
             new RiskDecisionResponse(
                 riskDecision.Accepted,
@@ -87,9 +107,119 @@ public sealed class TradingService
         var order = new Order(tradeIntent);
         await _orderRepository.AddOrderAsync(order, cancellationToken);
         await _orderRepository.AddOrderEventAsync(new ExecutionEvent(order.Id, order.CurrentStatus, order.FilledQuantity, order.CreatedAt), cancellationToken);
-        await _positionSnapshotRepository.UpsertPositionSnapshotAsync(new PositionSnapshot(tradeIntent.Ticker, tradeIntent.Side, 0, tradeIntent.LimitPrice, order.UpdatedAt), cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "order_created", null, order.CreatedAt, cancellationToken);
+
+        if (tradeIntent.Side.HasValue && tradeIntent.LimitPrice.HasValue)
+        {
+            await _positionSnapshotRepository.UpsertPositionSnapshotAsync(new PositionSnapshot(tradeIntent.Ticker, tradeIntent.Side.Value, 0, tradeIntent.LimitPrice.Value, order.UpdatedAt), cancellationToken);
+        }
 
         return await OrderResponseFactory.CreateAsync(order, _orderRepository, cancellationToken);
+    }
+
+    public async Task MarkOrderPublishAttemptedAsync(Guid orderId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+    {
+        var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Order '{orderId}' was not found.");
+
+        var at = occurredAt ?? DateTimeOffset.UtcNow;
+        order.MarkPublishAttempted(at);
+        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_attempted", null, at, cancellationToken);
+    }
+
+    public async Task MarkOrderPublishConfirmedAsync(Guid orderId, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+    {
+        var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Order '{orderId}' was not found.");
+
+        var at = occurredAt ?? DateTimeOffset.UtcNow;
+        order.MarkPublishConfirmed(commandEventId, at);
+        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_confirmed", $"commandEventId={commandEventId}", at, cancellationToken);
+    }
+
+    public async Task MarkOrderPublishPendingReviewAsync(Guid orderId, string reason, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+    {
+        var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Order '{orderId}' was not found.");
+
+        var at = occurredAt ?? DateTimeOffset.UtcNow;
+        order.MarkPublishPendingReview(reason, commandEventId, at);
+        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_pending_review", reason, at, cancellationToken);
+    }
+
+    public async Task<bool> ApplyExecutorResultAsync(ApplicationEventEnvelope resultEvent, CancellationToken cancellationToken = default)
+    {
+        var payloadJson = JsonSerializer.Serialize(resultEvent);
+        var orderId = ResolveOrderId(resultEvent);
+        var recorded = await _orderRepository.TryAddResultEventAsync(
+            resultEvent.Id,
+            orderId,
+            resultEvent.Name,
+            resultEvent.CorrelationId,
+            resultEvent.IdempotencyKey,
+            payloadJson,
+            resultEvent.OccurredAt,
+            cancellationToken);
+
+        if (!recorded)
+        {
+            return false;
+        }
+
+        if (!orderId.HasValue)
+        {
+            throw new DomainException("Result event is missing publisher order identity.");
+        }
+
+        var order = await _orderRepository.GetOrderAsync(orderId.Value, cancellationToken)
+            ?? throw new KeyNotFoundException($"Order '{orderId.Value}' was not found.");
+
+        var previousStatus = order.CurrentStatus;
+        var mappedStatus = MapResultToOrderStatus(resultEvent, order);
+        var filledQuantity = TryGetInt(resultEvent.Attributes, "filledQuantity")
+            ?? InferFilledQuantity(resultEvent, order, mappedStatus)
+            ?? order.FilledQuantity;
+        var details = TryGetString(resultEvent.Attributes, "blockReason")
+            ?? TryGetString(resultEvent.Attributes, "errorMessage")
+            ?? TryGetString(resultEvent.Attributes, "deadLetterQueue");
+
+        order.ApplyResult(
+            resultEvent.Name,
+            nextStatus: mappedStatus,
+            filledQuantity: filledQuantity,
+            lastResultMessage: details,
+            externalOrderId: TryGetString(resultEvent.Attributes, "externalOrderId"),
+            clientOrderId: TryGetString(resultEvent.Attributes, "clientOrderId"),
+            commandEventId: TryGetGuid(resultEvent.Attributes, "commandEventId") ?? order.CommandEventId,
+            updatedAt: resultEvent.OccurredAt);
+
+        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, resultEvent.Name, details, resultEvent.OccurredAt, cancellationToken);
+
+        if (mappedStatus.HasValue && mappedStatus.Value != previousStatus)
+        {
+            await _orderRepository.AddOrderEventAsync(new ExecutionEvent(order.Id, mappedStatus.Value, order.FilledQuantity, resultEvent.OccurredAt), cancellationToken);
+        }
+
+        if (mappedStatus is OrderStatus.Accepted or OrderStatus.Resting or OrderStatus.PartiallyFilled or OrderStatus.Filled)
+        {
+            if (order.TradeIntent.Side.HasValue && order.TradeIntent.LimitPrice.HasValue)
+            {
+                await _positionSnapshotRepository.UpsertPositionSnapshotAsync(
+                    new PositionSnapshot(
+                        order.TradeIntent.Ticker,
+                        order.TradeIntent.Side.Value,
+                        order.FilledQuantity,
+                        order.TradeIntent.LimitPrice.Value,
+                        resultEvent.OccurredAt),
+                    cancellationToken);
+            }
+        }
+
+        return true;
     }
 
     public async Task<ExecutionUpdateResult> ApplyExecutionUpdateAsync(ExecutionUpdateRequest request, CancellationToken cancellationToken = default)
@@ -112,9 +242,9 @@ public sealed class TradingService
         await _positionSnapshotRepository.UpsertPositionSnapshotAsync(
             new PositionSnapshot(
                 order.TradeIntent.Ticker,
-                order.TradeIntent.Side,
+                order.TradeIntent.Side ?? throw new DomainException("Execution updates require a persisted trade-intent side."),
                 order.FilledQuantity,
-                order.TradeIntent.LimitPrice,
+                order.TradeIntent.LimitPrice ?? throw new DomainException("Execution updates require a persisted limit price."),
                 occurredAt),
             cancellationToken);
 
@@ -132,13 +262,100 @@ public sealed class TradingService
         throw new DomainException("Side must be either 'yes' or 'no'.");
     }
 
+    private static TradeSide? ParseOptionalSide(string? side)
+    {
+        if (string.IsNullOrWhiteSpace(side))
+        {
+            return null;
+        }
+
+        return ParseSide(side);
+    }
+
+    private static TradeIntentActionType ParseActionType(string actionType)
+    {
+        if (Enum.TryParse<TradeIntentActionType>(actionType, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new DomainException("Action type is invalid.");
+    }
+
     private static OrderStatus ParseOrderStatus(string status)
     {
-        if (Enum.TryParse<OrderStatus>(status.Replace("-", string.Empty).Replace("_", string.Empty), ignoreCase: true, out var parsed))
+        var normalized = status.Replace("-", string.Empty).Replace("_", string.Empty).Trim();
+        if (string.Equals(normalized, "executed", StringComparison.OrdinalIgnoreCase))
+        {
+            return OrderStatus.Filled;
+        }
+
+        if (string.Equals(normalized, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return OrderStatus.Canceled;
+        }
+
+        if (Enum.TryParse<OrderStatus>(normalized, ignoreCase: true, out var parsed))
         {
             return parsed;
         }
 
         throw new DomainException("Execution update status is invalid.");
+    }
+
+    private static Guid? ResolveOrderId(ApplicationEventEnvelope resultEvent)
+    {
+        if (!string.IsNullOrWhiteSpace(resultEvent.ResourceId) && Guid.TryParse(resultEvent.ResourceId, out var fromResourceId))
+        {
+            return fromResourceId;
+        }
+
+        return TryGetGuid(resultEvent.Attributes, "publisherOrderId");
+    }
+
+    private static OrderStatus? MapResultToOrderStatus(ApplicationEventEnvelope resultEvent, Order order)
+    {
+        if (resultEvent.Name.EndsWith(".dead_lettered", StringComparison.OrdinalIgnoreCase))
+        {
+            return OrderStatus.Rejected;
+        }
+
+        return resultEvent.Name switch
+        {
+            "order.execution_succeeded" => ParseOptionalOrderStatus(TryGetString(resultEvent.Attributes, "orderStatus"))
+                ?? (order.TradeIntent.ActionType == TradeIntentActionType.Cancel ? OrderStatus.Canceled : OrderStatus.Accepted),
+            "order.execution_failed" => OrderStatus.Rejected,
+            "order.execution_blocked" => OrderStatus.Rejected,
+            _ => null,
+        };
+    }
+
+    private static OrderStatus? ParseOptionalOrderStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return null;
+        }
+
+        return ParseOrderStatus(status);
+    }
+
+    private static string? TryGetString(IReadOnlyDictionary<string, string?> attributes, string key)
+        => attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
+    private static int? TryGetInt(IReadOnlyDictionary<string, string?> attributes, string key)
+        => attributes.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : null;
+
+    private static Guid? TryGetGuid(IReadOnlyDictionary<string, string?> attributes, string key)
+        => attributes.TryGetValue(key, out var value) && Guid.TryParse(value, out var parsed) ? parsed : null;
+
+    private static int? InferFilledQuantity(ApplicationEventEnvelope resultEvent, Order order, OrderStatus? mappedStatus)
+    {
+        if (mappedStatus == OrderStatus.Filled && order.TradeIntent.Quantity.HasValue)
+        {
+            return order.TradeIntent.Quantity.Value;
+        }
+
+        return null;
     }
 }

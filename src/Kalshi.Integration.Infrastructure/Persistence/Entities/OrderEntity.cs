@@ -8,6 +8,12 @@ public sealed class OrderEntity
     public Guid Id { get; set; }
     public Guid TradeIntentId { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string PublishStatus { get; set; } = string.Empty;
+    public string? LastResultStatus { get; set; }
+    public string? LastResultMessage { get; set; }
+    public string? ExternalOrderId { get; set; }
+    public string? ClientOrderId { get; set; }
+    public Guid? CommandEventId { get; set; }
     public int FilledQuantity { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

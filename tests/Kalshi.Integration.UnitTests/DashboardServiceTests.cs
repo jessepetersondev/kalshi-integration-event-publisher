@@ -83,6 +83,12 @@ public sealed class DashboardServiceTests
         orderRepository
             .Setup(x => x.GetOrderEventsAsync(newerOrder.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { newestEvent });
+        orderRepository
+            .Setup(x => x.GetOrderLifecycleEventsAsync(olderOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
+        orderRepository
+            .Setup(x => x.GetOrderLifecycleEventsAsync(newerOrder.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
 
         var service = new DashboardService(orderRepository.Object, positionSnapshotRepository.Object, issueStore.Object, auditStore.Object);
 

@@ -48,11 +48,20 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
             {
                 Id = tradeIntent.Id,
                 Ticker = tradeIntent.Ticker,
-                Side = tradeIntent.Side.ToString(),
+                Side = tradeIntent.Side?.ToString(),
                 Quantity = tradeIntent.Quantity,
                 LimitPrice = tradeIntent.LimitPrice,
                 StrategyName = tradeIntent.StrategyName,
                 CorrelationId = tradeIntent.CorrelationId,
+                ActionType = tradeIntent.ActionType.ToString(),
+                OriginService = tradeIntent.OriginService,
+                DecisionReason = tradeIntent.DecisionReason,
+                CommandSchemaVersion = tradeIntent.CommandSchemaVersion,
+                TargetPositionTicker = tradeIntent.TargetPositionTicker,
+                TargetPositionSide = tradeIntent.TargetPositionSide?.ToString(),
+                TargetPublisherOrderId = tradeIntent.TargetPublisherOrderId,
+                TargetClientOrderId = tradeIntent.TargetClientOrderId,
+                TargetExternalOrderId = tradeIntent.TargetExternalOrderId,
                 CreatedAt = tradeIntent.CreatedAt,
             };
 
@@ -82,6 +91,12 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
                 Id = order.Id,
                 TradeIntentId = order.TradeIntent.Id,
                 Status = order.CurrentStatus.ToString(),
+                PublishStatus = order.PublishStatus.ToString(),
+                LastResultStatus = order.LastResultStatus,
+                LastResultMessage = order.LastResultMessage,
+                ExternalOrderId = order.ExternalOrderId,
+                ClientOrderId = order.ClientOrderId,
+                CommandEventId = order.CommandEventId,
                 FilledQuantity = order.FilledQuantity,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
@@ -96,6 +111,12 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
         {
             var entity = await _dbContext.Orders.SingleAsync(x => x.Id == order.Id, cancellationToken);
             entity.Status = order.CurrentStatus.ToString();
+            entity.PublishStatus = order.PublishStatus.ToString();
+            entity.LastResultStatus = order.LastResultStatus;
+            entity.LastResultMessage = order.LastResultMessage;
+            entity.ExternalOrderId = order.ExternalOrderId;
+            entity.ClientOrderId = order.ClientOrderId;
+            entity.CommandEventId = order.CommandEventId;
             entity.FilledQuantity = order.FilledQuantity;
             entity.UpdatedAt = order.UpdatedAt;
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -156,6 +177,55 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
         {
             var entities = await _dbContext.OrderEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
             return entities.OrderBy(x => x.OccurredAt).Select(MapExecutionEvent).ToArray();
+        });
+
+    public Task AddOrderLifecycleEventAsync(Guid orderId, string stage, string? details, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+        => ExecuteDependencyCallAsync("order-lifecycle-events.insert", async () =>
+        {
+            _dbContext.OrderLifecycleEvents.Add(new OrderLifecycleEventEntity
+            {
+                Id = Guid.NewGuid(),
+                OrderId = orderId,
+                Stage = stage,
+                Details = details,
+                OccurredAt = occurredAt,
+            });
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        });
+
+    public Task<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>> GetOrderLifecycleEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
+        => ExecuteDependencyCallAsync<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>>("order-lifecycle-events.list-by-order-id", async () =>
+        {
+            var entities = await _dbContext.OrderLifecycleEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
+            return entities
+                .OrderBy(x => x.OccurredAt)
+                .Select(x => (x.Stage, x.Details, x.OccurredAt))
+                .ToArray();
+        });
+
+    public Task<bool> TryAddResultEventAsync(Guid resultEventId, Guid? orderId, string name, string? correlationId, string? idempotencyKey, string payloadJson, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+        => ExecuteDependencyCallAsync("result-events.insert", async () =>
+        {
+            var exists = await _dbContext.ResultEvents.AsNoTracking().AnyAsync(x => x.Id == resultEventId, cancellationToken);
+            if (exists)
+            {
+                return false;
+            }
+
+            _dbContext.ResultEvents.Add(new ResultEventEntity
+            {
+                Id = resultEventId,
+                OrderId = orderId,
+                Name = name,
+                CorrelationId = correlationId,
+                IdempotencyKey = idempotencyKey,
+                PayloadJson = payloadJson,
+                OccurredAt = occurredAt,
+            });
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return true;
         });
 
     public Task UpsertPositionSnapshotAsync(PositionSnapshot positionSnapshot, CancellationToken cancellationToken = default)
@@ -259,7 +329,27 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
 
     private static TradeIntent MapTradeIntent(TradeIntentEntity entity)
     {
-        return new TradeIntent(entity.Ticker, Enum.Parse<TradeSide>(entity.Side), entity.Quantity, entity.LimitPrice, entity.StrategyName, entity.CorrelationId, entity.CreatedAt)
+        var actionType = Enum.TryParse<TradeIntentActionType>(entity.ActionType, ignoreCase: true, out var parsedActionType)
+            ? parsedActionType
+            : TradeIntentActionType.Entry;
+
+        return new TradeIntent(
+                entity.Ticker,
+                string.IsNullOrWhiteSpace(entity.Side) ? null : Enum.Parse<TradeSide>(entity.Side),
+                entity.Quantity,
+                entity.LimitPrice,
+                entity.StrategyName,
+                actionType,
+                string.IsNullOrWhiteSpace(entity.OriginService) ? "legacy-client" : entity.OriginService,
+                string.IsNullOrWhiteSpace(entity.DecisionReason) ? "legacy request" : entity.DecisionReason,
+                string.IsNullOrWhiteSpace(entity.CommandSchemaVersion) ? "weather-quant-command.v1" : entity.CommandSchemaVersion,
+                entity.TargetPositionTicker,
+                string.IsNullOrWhiteSpace(entity.TargetPositionSide) ? null : Enum.Parse<TradeSide>(entity.TargetPositionSide),
+                entity.TargetPublisherOrderId,
+                entity.TargetClientOrderId,
+                entity.TargetExternalOrderId,
+                string.IsNullOrWhiteSpace(entity.CorrelationId) ? null : entity.CorrelationId,
+                entity.CreatedAt)
             .WithId(entity.Id);
     }
 
@@ -283,7 +373,23 @@ public sealed class EfTradingRepository : ITradeIntentRepository, IOrderReposito
     {
         var tradeIntent = MapTradeIntent(tradeIntentEntity);
         var order = new Order(tradeIntent);
-        order.SetPersistenceState(orderEntity.Id, Enum.Parse<OrderStatus>(orderEntity.Status), orderEntity.FilledQuantity, orderEntity.CreatedAt, orderEntity.UpdatedAt);
+        var publishStatus = Enum.TryParse<OrderPublishStatus>(orderEntity.PublishStatus, ignoreCase: true, out var parsedPublishStatus)
+            ? parsedPublishStatus
+            : string.Equals(orderEntity.PublishStatus, "legacy", StringComparison.OrdinalIgnoreCase)
+                ? OrderPublishStatus.PublishConfirmed
+                : OrderPublishStatus.OrderCreated;
+        order.SetPersistenceState(
+            orderEntity.Id,
+            Enum.Parse<OrderStatus>(orderEntity.Status),
+            publishStatus,
+            orderEntity.LastResultStatus,
+            orderEntity.LastResultMessage,
+            orderEntity.ExternalOrderId,
+            orderEntity.ClientOrderId,
+            orderEntity.CommandEventId,
+            orderEntity.FilledQuantity,
+            orderEntity.CreatedAt,
+            orderEntity.UpdatedAt);
         return order;
     }
 }

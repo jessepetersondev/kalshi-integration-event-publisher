@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Kalshi.Integration.Application.Events;
+using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Dashboard;
 using Kalshi.Integration.Contracts.Integrations;
 using Kalshi.Integration.Contracts.Orders;
@@ -206,6 +207,63 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     }
 
     [Fact]
+    public async Task OrderOutcomesEndpoint_ShouldReturnPublisherOwnedExecutionOutcomeState()
+    {
+        var correlationId = $"outcome-{Guid.NewGuid():N}";
+        var ticker = $"KXBTC-OUTCOME-{Guid.NewGuid():N}".ToUpperInvariant();
+
+        var tradeIntentResponse = await _client.PostAsJsonAsync(
+            "/api/v1/trade-intents",
+            new CreateTradeIntentRequest(
+                ticker,
+                "yes",
+                2,
+                0.46m,
+                "Outcome",
+                correlationId,
+                OriginService: "weather-quant"));
+        tradeIntentResponse.EnsureSuccessStatusCode();
+
+        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        createOrderResponse.EnsureSuccessStatusCode();
+        var createdOrder = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
+            var resultEvent = ApplicationEventEnvelope.Create(
+                category: "integration",
+                name: "order.execution_succeeded",
+                resourceId: createdOrder!.Id.ToString(),
+                correlationId: correlationId,
+                attributes: new Dictionary<string, string?>
+                {
+                    ["publisherOrderId"] = createdOrder.Id.ToString(),
+                    ["orderStatus"] = "accepted",
+                    ["externalOrderId"] = "ext-outcome-1",
+                    ["clientOrderId"] = "client-outcome-1",
+                },
+                occurredAt: DateTimeOffset.UtcNow.AddSeconds(1));
+
+            var applied = await tradingService.ApplyExecutorResultAsync(resultEvent);
+            Assert.True(applied);
+        }
+
+        var outcomes = await _client.GetFromJsonAsync<List<OrderOutcomeResponse>>(
+            $"/api/v1/orders/outcomes?correlationId={Uri.EscapeDataString(correlationId)}&originService=weather-quant&outcomeState=succeeded&limit=10");
+
+        Assert.NotNull(outcomes);
+        var outcome = Assert.Single(outcomes!);
+        Assert.Equal(createdOrder!.Id, outcome.Id);
+        Assert.Equal("weather-quant", outcome.OriginService);
+        Assert.Equal("succeeded", outcome.OutcomeState);
+        Assert.Equal("order.execution_succeeded", outcome.LastResultStatus);
+        Assert.Equal("ext-outcome-1", outcome.ExternalOrderId);
+        Assert.Equal("publishconfirmed", outcome.PublishStatus);
+    }
+
+    [Fact]
     public async Task PostOrder_ShouldReplayDuplicateIdempotencyKeyWithoutCreatingSecondOrder()
     {
         var ticker = $"KXBTC-ORDER-{Guid.NewGuid():N}".ToUpperInvariant();
@@ -359,7 +417,7 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
         var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
         var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "filled", 1, DateTimeOffset.UtcNow, "corr-c"));
+        var response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, "corr-c"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -391,6 +449,7 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
 
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("Operator Dashboard", html);
+        Assert.Contains("Execution Outcomes", html);
         Assert.Contains("Audit Trail", html);
         Assert.Contains("Live data only", html);
         Assert.Contains("Validation & Integration Issues", html);
@@ -492,7 +551,7 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
         var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
         var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var integrationResponse = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "filled", 1, DateTimeOffset.UtcNow, $"bad-exec-{Guid.NewGuid():N}"));
+        var integrationResponse = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, $"bad-exec-{Guid.NewGuid():N}"));
         Assert.Equal(HttpStatusCode.BadRequest, integrationResponse.StatusCode);
 
         var validationIssues = await _client.GetFromJsonAsync<List<DashboardIssueResponse>>("/api/v1/dashboard/issues?category=validation&hours=168");

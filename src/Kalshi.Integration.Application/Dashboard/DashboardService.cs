@@ -41,11 +41,16 @@ public sealed class DashboardService
             .Select(order => new DashboardOrderSummaryResponse(
                 order.Id,
                 order.TradeIntent.Ticker,
-                order.TradeIntent.Side.ToString().ToLowerInvariant(),
+                order.TradeIntent.Side?.ToString().ToLowerInvariant(),
                 order.TradeIntent.Quantity,
                 order.TradeIntent.LimitPrice,
                 order.TradeIntent.StrategyName,
                 order.CurrentStatus.ToString().ToLowerInvariant(),
+                order.PublishStatus.ToString().ToLowerInvariant(),
+                order.LastResultStatus,
+                order.TradeIntent.CorrelationId,
+                order.TradeIntent.ActionType.ToString().ToLowerInvariant(),
+                order.ExternalOrderId,
                 order.FilledQuantity,
                 order.UpdatedAt))
             .ToArray();
@@ -77,8 +82,20 @@ public sealed class DashboardService
                 order.Id,
                 order.TradeIntent.Ticker,
                 orderEvent.Status.ToString().ToLowerInvariant(),
+                "order_status",
+                null,
                 orderEvent.FilledQuantity,
                 orderEvent.OccurredAt)));
+
+            var lifecycleEvents = await _orderRepository.GetOrderLifecycleEventsAsync(order.Id, cancellationToken);
+            events.AddRange(lifecycleEvents.Select(lifecycleEvent => new DashboardEventResponse(
+                order.Id,
+                order.TradeIntent.Ticker,
+                lifecycleEvent.Stage,
+                "lifecycle",
+                lifecycleEvent.Details,
+                order.FilledQuantity,
+                lifecycleEvent.OccurredAt)));
         }
 
         return events

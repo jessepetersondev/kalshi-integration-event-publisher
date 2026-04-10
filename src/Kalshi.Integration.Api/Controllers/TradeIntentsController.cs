@@ -135,20 +135,7 @@ public sealed class TradeIntentsController : ControllerBase
                 cancellationToken);
 
             await _applicationEventPublisher.PublishAsync(
-                ApplicationEventEnvelope.Create(
-                    category: "trading",
-                    name: "trade-intent.created",
-                    resourceId: response.Id.ToString(),
-                    correlationId: correlationId,
-                    idempotencyKey: idempotencyKey,
-                    attributes: new Dictionary<string, string?>
-                    {
-                        ["ticker"] = response.Ticker,
-                        ["side"] = response.Side,
-                        ["quantity"] = response.Quantity.ToString(CultureInfo.InvariantCulture),
-                        ["limitPrice"] = response.LimitPrice.ToString(CultureInfo.InvariantCulture),
-                        ["strategyName"] = response.StrategyName,
-                    }),
+                WeatherQuantCommandMapper.CreateTradeIntentEvent(response, correlationId, idempotencyKey),
                 cancellationToken);
 
             await _idempotencyService.SaveResponseAsync(IdempotencyScope, idempotencyKey, request, StatusCodes.Status201Created, response, cancellationToken);

@@ -20,6 +20,8 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
     private const string JwtSigningKey = "kalshi-integration-event-publisher-local-dev-signing-key-please-change";
 
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), "kalshi-integration-event-publisher", "integration", $"{Guid.NewGuid():N}.db");
+    private readonly object _databaseInitializationLock = new();
+    private bool _databaseInitialized;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -43,15 +45,30 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
-        EnsureDatabaseDirectory();
-        TryDeleteDatabase();
+        lock (_databaseInitializationLock)
+        {
+            if (!_databaseInitialized)
+            {
+                EnsureDatabaseDirectory();
+                TryDeleteDatabase();
+            }
+        }
 
         var host = base.CreateHost(builder);
 
-        using var scope = host.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
-        dbContext.Database.EnsureDeleted();
-        dbContext.Database.EnsureCreated();
+        lock (_databaseInitializationLock)
+        {
+            if (_databaseInitialized)
+            {
+                return host;
+            }
+
+            using var scope = host.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+            dbContext.Database.EnsureDeleted();
+            dbContext.Database.EnsureCreated();
+            _databaseInitialized = true;
+        }
 
         return host;
     }

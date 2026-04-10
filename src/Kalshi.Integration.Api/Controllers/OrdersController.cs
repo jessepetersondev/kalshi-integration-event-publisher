@@ -6,6 +6,7 @@ using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Orders;
+using Kalshi.Integration.Infrastructure.Messaging;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -134,26 +135,22 @@ public sealed class OrdersController : ControllerBase
                     details: $"tradeIntentId={response.TradeIntentId}; ticker={response.Ticker}; quantity={response.Quantity}; status={response.Status}"),
                 cancellationToken);
 
-            await _applicationEventPublisher.PublishAsync(
-                ApplicationEventEnvelope.Create(
-                    category: "trading",
-                    name: "order.created",
-                    resourceId: response.Id.ToString(),
-                    correlationId: correlationId,
-                    idempotencyKey: idempotencyKey,
-                    attributes: new Dictionary<string, string?>
-                    {
-                        ["tradeIntentId"] = response.TradeIntentId.ToString(),
-                        ["ticker"] = response.Ticker,
-                        ["side"] = response.Side,
-                        ["quantity"] = response.Quantity.ToString(CultureInfo.InvariantCulture),
-                        ["limitPrice"] = response.LimitPrice.ToString(CultureInfo.InvariantCulture),
-                        ["status"] = response.Status,
-                    }),
-                cancellationToken);
+            var commandEvent = WeatherQuantCommandMapper.CreateOrderEvent(response, correlationId, idempotencyKey);
+            await _tradingService.MarkOrderPublishAttemptedAsync(response.Id, commandEvent.OccurredAt, cancellationToken);
+
+            try
+            {
+                await _applicationEventPublisher.PublishAsync(commandEvent, cancellationToken);
+                await _tradingService.MarkOrderPublishConfirmedAsync(response.Id, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
+            }
+            catch (PublishConfirmationException exception)
+            {
+                await _tradingService.MarkOrderPublishPendingReviewAsync(response.Id, exception.Message, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
+            }
 
             await _idempotencyService.SaveResponseAsync(IdempotencyScope, idempotencyKey, request, StatusCodes.Status201Created, response, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = response.Id, version = "1" }, response);
+            var refreshed = await _tradingQueryService.GetOrderAsync(response.Id, cancellationToken) ?? response;
+            return CreatedAtAction(nameof(GetById), new { id = refreshed.Id, version = "1" }, refreshed);
         }
         catch (KeyNotFoundException exception)
         {
@@ -170,6 +167,48 @@ public sealed class OrdersController : ControllerBase
 
             return Problem(title: "Trade intent not found", detail: exception.Message, statusCode: StatusCodes.Status404NotFound);
         }
+    }
+
+    /// <summary>
+    /// Returns the current execution outcome view for tracked orders, optionally filtered by
+    /// publisher/client correlation and normalized result state.
+    /// </summary>
+    /// <param name="orderId">The optional order identifier.</param>
+    /// <param name="correlationId">The optional client correlation identifier.</param>
+    /// <param name="originService">The optional calling client/service name.</param>
+    /// <param name="status">The optional raw order status filter.</param>
+    /// <param name="publishStatus">The optional raw publish-status filter.</param>
+    /// <param name="outcomeState">The optional normalized outcome-state filter.</param>
+    /// <param name="resultStatus">The optional raw executor result-status filter.</param>
+    /// <param name="limit">The maximum number of rows to return.</param>
+    /// <param name="cancellationToken">The cancellation token for the request.</param>
+    /// <returns>The matching execution-outcome rows.</returns>
+    [HttpGet("outcomes")]
+    [Authorize(Policy = "trading.read")]
+    [ProducesResponseType(typeof(IReadOnlyList<OrderOutcomeResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOutcomes(
+        [FromQuery] Guid? orderId = null,
+        [FromQuery] string? correlationId = null,
+        [FromQuery] string? originService = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? publishStatus = null,
+        [FromQuery] string? outcomeState = null,
+        [FromQuery] string? resultStatus = null,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var outcomes = await _tradingQueryService.GetOrderOutcomesAsync(
+            orderId,
+            correlationId,
+            originService,
+            status,
+            publishStatus,
+            outcomeState,
+            resultStatus,
+            limit,
+            cancellationToken);
+
+        return Ok(outcomes);
     }
 
     /// <summary>

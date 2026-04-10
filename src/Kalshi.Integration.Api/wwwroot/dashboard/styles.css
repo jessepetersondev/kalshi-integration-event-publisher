@@ -418,9 +418,11 @@ tr:hover td {
 
 .badge-side-yes,
 .badge-outcome-success,
+.badge-outcome-succeeded,
 .badge-status-filled,
 .badge-status-settled,
-.badge-status-accepted {
+.badge-status-accepted,
+.badge-publish-publishconfirmed {
   color: var(--success);
   background: var(--success-soft);
 }
@@ -428,9 +430,11 @@ tr:hover td {
 .badge-side-no,
 .badge-severity-error,
 .badge-outcome-rejected,
+.badge-outcome-failed,
 .badge-status-rejected,
 .badge-status-cancelled,
-.badge-status-canceled {
+.badge-status-canceled,
+.badge-publish-publishpendingreview {
   color: var(--danger);
   background: var(--danger-soft);
 }
@@ -439,9 +443,23 @@ tr:hover td {
 .badge-status-resting,
 .badge-status-partiallyfilled,
 .badge-severity-warning,
-.badge-outcome-replayed {
+.badge-outcome-replayed,
+.badge-outcome-awaitingresult,
+.badge-outcome-awaitingpublishconfirmation,
+.badge-outcome-pendingsubmission,
+.badge-outcome-pendingreview,
+.badge-publish-ordercreated,
+.badge-publish-publishattempted {
   color: var(--warning);
   background: var(--warning-soft);
+}
+
+.badge-outcome-canceled,
+.badge-outcome-settled,
+.badge-outcome-unknown,
+.badge-publish-accepted {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .badge-category-idempotency,
@@ -460,6 +478,7 @@ tr:hover td {
 .badge-side,
 .badge-category,
 .badge-outcome,
+.badge-publish,
 .badge-severity {
   border: 1px solid rgba(16, 33, 58, 0.06);
 }

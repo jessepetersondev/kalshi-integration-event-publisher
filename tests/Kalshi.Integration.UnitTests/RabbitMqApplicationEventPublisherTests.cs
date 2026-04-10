@@ -41,6 +41,8 @@ public sealed class RabbitMqApplicationEventPublisherTests
         model
             .Setup(x => x.ExchangeDeclare("kalshi.events", "topic", true, false, null));
         model
+            .Setup(x => x.ConfirmSelect());
+        model
             .Setup(x => x.CreateBasicProperties())
             .Returns(properties.Object);
         model
@@ -55,6 +57,9 @@ public sealed class RabbitMqApplicationEventPublisherTests
                 routingKey = key;
                 publishedBody = body.ToArray();
             });
+        model
+            .Setup(x => x.WaitForConfirms(It.IsAny<TimeSpan>()))
+            .Returns(true);
         model.Setup(x => x.Dispose());
         connection.Setup(x => x.Dispose());
 

@@ -20,6 +20,7 @@
       <nav>
         <a href="#overview">Overview</a>
         <a href="#orders">Orders</a>
+        <a href="#outcomes">Outcomes</a>
         <a href="#positions">Positions</a>
         <a href="#events">Events</a>
         <a href="#audit">Audit Trail</a>
@@ -99,6 +100,56 @@
               <tr><th>Order</th><th>Ticker</th><th>Side</th><th>Qty</th><th>Status</th><th>Filled</th><th>Updated</th></tr>
             </thead>
             <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="outcomes" class="panel">
+        <div class="panel-header">
+          <div>
+            <h3>Execution Outcomes</h3>
+            <p class="panel-subtitle">Publisher-owned success and failure state for client command lookups.</p>
+          </div>
+          <div class="filters">
+            <label>
+              Order ID
+              <input id="outcome-order-id" type="text" placeholder="Optional GUID" />
+            </label>
+            <label>
+              Correlation
+              <input id="outcome-correlation-id" type="text" placeholder="Client correlation ID" />
+            </label>
+            <label>
+              Source
+              <input id="outcome-origin-service" type="text" placeholder="weather-quant" />
+            </label>
+            <label>
+              Outcome
+              <select id="outcome-state">
+                <option value="">All</option>
+                <option value="succeeded">Succeeded</option>
+                <option value="failed">Failed</option>
+                <option value="awaiting_result">Awaiting Result</option>
+                <option value="awaiting_publish_confirmation">Awaiting Publish Confirmation</option>
+                <option value="pending_submission">Pending Submission</option>
+                <option value="pending_review">Pending Review</option>
+                <option value="canceled">Canceled</option>
+                <option value="settled">Settled</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <button id="outcomes-refresh" type="button">Apply</button>
+          </div>
+          <span id="outcomes-status" class="status-pill">Loading…</span>
+        </div>
+        <div id="outcomes-empty" class="empty-state hidden">No execution outcomes yet.</div>
+        <div id="outcomes-error" class="error-state hidden"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Updated</th><th>Order</th><th>Source</th><th>Correlation</th><th>Market</th><th>Outcome</th><th>Status</th><th>Publish</th><th>Result Event</th><th>Message</th></tr>
+            </thead>
+            <tbody id="outcomes-body"></tbody>
           </table>
         </div>
       </section>

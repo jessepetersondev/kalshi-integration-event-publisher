@@ -5,6 +5,7 @@ using Kalshi.Integration.Application.Events;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace Kalshi.Integration.Infrastructure.Messaging;
 
@@ -37,40 +38,79 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
         var payload = JsonSerializer.Serialize(applicationEvent, SerializerOptions);
         var body = Encoding.UTF8.GetBytes(payload);
 
-        using var connection = _connectionFactory.CreateConnection(_options.ClientProvidedName);
-        using var channel = connection.CreateModel();
+        Exception? lastException = null;
+        var maxAttempts = Math.Max(1, _options.PublishRetryAttempts + 1);
 
-        channel.ExchangeDeclare(
-            exchange: _options.Exchange,
-            type: _options.ExchangeType,
-            durable: true,
-            autoDelete: false,
-            arguments: null);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
 
-        var properties = channel.CreateBasicProperties();
-        properties.AppId = _options.ClientProvidedName;
-        properties.ContentType = "application/json";
-        properties.DeliveryMode = 2;
-        properties.MessageId = applicationEvent.Id.ToString();
-        properties.CorrelationId = applicationEvent.CorrelationId ?? applicationEvent.Id.ToString();
-        properties.Type = applicationEvent.Name;
-        properties.Timestamp = new AmqpTimestamp(applicationEvent.OccurredAt.ToUnixTimeSeconds());
-        properties.Headers = BuildHeaders(applicationEvent);
+            try
+            {
+                using var connection = _connectionFactory.CreateConnection(_options.ClientProvidedName);
+                using var channel = connection.CreateModel();
 
-        channel.BasicPublish(
-            exchange: _options.Exchange,
-            routingKey: routingKey,
-            mandatory: _options.Mandatory,
-            basicProperties: properties,
-            body: body);
+                channel.ExchangeDeclare(
+                    exchange: _options.Exchange,
+                    type: _options.ExchangeType,
+                    durable: true,
+                    autoDelete: false,
+                    arguments: null);
 
-        _logger.LogInformation(
-            "Published application event {EventName} to RabbitMQ exchange {Exchange} with routing key {RoutingKey}.",
-            applicationEvent.Name,
-            _options.Exchange,
-            routingKey);
+                channel.ConfirmSelect();
 
-        return Task.CompletedTask;
+                var properties = channel.CreateBasicProperties();
+                properties.AppId = _options.ClientProvidedName;
+                properties.ContentType = "application/json";
+                properties.DeliveryMode = 2;
+                properties.MessageId = applicationEvent.Id.ToString();
+                properties.CorrelationId = applicationEvent.CorrelationId ?? applicationEvent.Id.ToString();
+                properties.Type = applicationEvent.Name;
+                properties.Timestamp = new AmqpTimestamp(applicationEvent.OccurredAt.ToUnixTimeSeconds());
+                properties.Headers = BuildHeaders(applicationEvent);
+
+                channel.BasicPublish(
+                    exchange: _options.Exchange,
+                    routingKey: routingKey,
+                    mandatory: _options.Mandatory,
+                    basicProperties: properties,
+                    body: body);
+
+                if (!channel.WaitForConfirms(TimeSpan.FromMilliseconds(_options.PublishConfirmTimeoutMilliseconds)))
+                {
+                    throw new PublishConfirmationException(
+                        $"RabbitMQ did not confirm publication of event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.");
+                }
+
+                _logger.LogInformation(
+                    "Published application event {EventName} to RabbitMQ exchange {Exchange} with routing key {RoutingKey}.",
+                    applicationEvent.Name,
+                    _options.Exchange,
+                    routingKey);
+
+                return Task.CompletedTask;
+            }
+            catch (Exception exception) when (attempt < maxAttempts && IsRetryable(exception))
+            {
+                lastException = exception;
+                Thread.Sleep(TimeSpan.FromMilliseconds(_options.PublishRetryDelayMilliseconds * attempt));
+            }
+            catch (PublishConfirmationException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastException = exception;
+                break;
+            }
+        }
+
+        throw lastException is PublishConfirmationException publishConfirmationException
+            ? publishConfirmationException
+            : new PublishConfirmationException(
+                $"RabbitMQ publication could not be confirmed for event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.",
+                lastException);
     }
 
     private string BuildRoutingKey(ApplicationEventEnvelope applicationEvent)
@@ -119,4 +159,7 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
 
         return headers;
     }
+
+    private static bool IsRetryable(Exception exception)
+        => exception is BrokerUnreachableException or OperationInterruptedException or AlreadyClosedException or IOException or TimeoutException;
 }

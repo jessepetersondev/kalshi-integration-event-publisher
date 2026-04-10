@@ -19,6 +19,11 @@ public sealed class KalshiIntegrationDbContext : DbContext
     public DbSet<TradeIntentEntity> TradeIntents => Set<TradeIntentEntity>();
     public DbSet<OrderEntity> Orders => Set<OrderEntity>();
     public DbSet<OrderEventEntity> OrderEvents => Set<OrderEventEntity>();
+    public DbSet<OrderLifecycleEventEntity> OrderLifecycleEvents => Set<OrderLifecycleEventEntity>();
+    public DbSet<ResultEventEntity> ResultEvents => Set<ResultEventEntity>();
+    public DbSet<AuditRecordEntity> AuditRecords => Set<AuditRecordEntity>();
+    public DbSet<IdempotencyRecordEntity> IdempotencyRecords => Set<IdempotencyRecordEntity>();
+    public DbSet<OperationalIssueEntity> OperationalIssues => Set<OperationalIssueEntity>();
     public DbSet<PositionSnapshotEntity> PositionSnapshots => Set<PositionSnapshotEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -28,9 +33,17 @@ public sealed class KalshiIntegrationDbContext : DbContext
             entity.ToTable("TradeIntents");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Ticker).HasMaxLength(64).IsRequired();
-            entity.Property(x => x.Side).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.Side).HasMaxLength(16);
             entity.Property(x => x.StrategyName).HasMaxLength(128).IsRequired();
             entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.ActionType).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.OriginService).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.DecisionReason).HasMaxLength(512).IsRequired();
+            entity.Property(x => x.CommandSchemaVersion).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.TargetPositionTicker).HasMaxLength(64);
+            entity.Property(x => x.TargetPositionSide).HasMaxLength(16);
+            entity.Property(x => x.TargetClientOrderId).HasMaxLength(128);
+            entity.Property(x => x.TargetExternalOrderId).HasMaxLength(128);
             entity.Property(x => x.LimitPrice).HasPrecision(10, 4);
         });
 
@@ -40,6 +53,12 @@ public sealed class KalshiIntegrationDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.TradeIntentId);
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.PublishStatus).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastResultStatus).HasMaxLength(64);
+            entity.Property(x => x.LastResultMessage).HasMaxLength(1024);
+            entity.Property(x => x.ExternalOrderId).HasMaxLength(128);
+            entity.Property(x => x.ClientOrderId).HasMaxLength(128);
+            entity.HasIndex(x => x.ExternalOrderId);
         });
 
         modelBuilder.Entity<OrderEventEntity>(entity =>
@@ -48,6 +67,63 @@ public sealed class KalshiIntegrationDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.OrderId);
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<OrderLifecycleEventEntity>(entity =>
+        {
+            entity.ToTable("OrderLifecycleEvents");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OrderId);
+            entity.Property(x => x.Stage).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Details).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<ResultEventEntity>(entity =>
+        {
+            entity.ToTable("ResultEvents");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OrderId);
+            entity.Property(x => x.Name).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.CorrelationId).HasMaxLength(128);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(128);
+            entity.Property(x => x.PayloadJson).HasColumnType("TEXT").IsRequired();
+        });
+
+        modelBuilder.Entity<AuditRecordEntity>(entity =>
+        {
+            entity.ToTable("AuditRecords");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OccurredAt);
+            entity.Property(x => x.Category).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Action).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.Outcome).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(128);
+            entity.Property(x => x.ResourceId).HasMaxLength(128);
+            entity.Property(x => x.Details).HasMaxLength(2048).IsRequired();
+        });
+
+        modelBuilder.Entity<IdempotencyRecordEntity>(entity =>
+        {
+            entity.ToTable("IdempotencyRecords");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Scope, x.Key }).IsUnique();
+            entity.Property(x => x.Scope).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Key).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RequestHash).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.ResponseBody).HasColumnType("TEXT").IsRequired();
+        });
+
+        modelBuilder.Entity<OperationalIssueEntity>(entity =>
+        {
+            entity.ToTable("OperationalIssues");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OccurredAt);
+            entity.Property(x => x.Category).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Severity).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Source).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Message).HasMaxLength(512).IsRequired();
+            entity.Property(x => x.Details).HasMaxLength(2048);
         });
 
         modelBuilder.Entity<PositionSnapshotEntity>(entity =>

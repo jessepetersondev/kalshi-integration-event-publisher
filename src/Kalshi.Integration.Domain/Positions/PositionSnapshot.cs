@@ -8,6 +8,16 @@ namespace Kalshi.Integration.Domain.Positions;
 /// </summary>
 public sealed class PositionSnapshot
 {
+    public PositionSnapshot(string ticker, TradeSide? side, int contracts, decimal? averagePrice, DateTimeOffset asOf)
+        : this(
+            ticker,
+            side ?? throw new DomainException("Side is required."),
+            contracts,
+            averagePrice ?? throw new DomainException("Average price is required."),
+            asOf)
+    {
+    }
+
     public PositionSnapshot(string ticker, TradeSide side, int contracts, decimal averagePrice, DateTimeOffset asOf)
     {
         if (string.IsNullOrWhiteSpace(ticker))

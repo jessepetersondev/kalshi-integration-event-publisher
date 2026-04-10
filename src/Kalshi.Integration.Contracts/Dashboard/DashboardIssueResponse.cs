@@ -10,4 +10,5 @@ public sealed record DashboardIssueResponse(
     string Source,
     string Message,
     string? Details,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? CorrelationId = null);

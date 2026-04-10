@@ -1,4 +1,5 @@
 using Kalshi.Integration.Application.Abstractions;
+using Kalshi.Integration.Infrastructure.Integrations.Kalshi;
 using Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 using Kalshi.Integration.Infrastructure.Messaging;
 using Kalshi.Integration.Infrastructure.Operations;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("KalshiIntegration")
             ?? (normalizedProvider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-event-publisher.db" : null);
         var normalizedEventPublisherProvider = EventPublisherProviders.Normalize(configuration.GetValue<string>($"{EventPublisherOptions.SectionName}:Provider"));
+        var kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
         var nodeGatewayOptions = configuration.GetSection(NodeGatewayOptions.SectionName).Get<NodeGatewayOptions>() ?? new NodeGatewayOptions();
 
         DatabaseProviders.EnsureConnectionString(connectionString);
@@ -58,6 +60,12 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<KalshiApiOptions>()
+            .Bind(configuration.GetSection(KalshiApiOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _), $"{KalshiApiOptions.SectionName}:BaseUrl must be an absolute URL.")
+            .ValidateOnStart();
+
         services.AddOptions<NodeGatewayOptions>()
             .Bind(configuration.GetSection(NodeGatewayOptions.SectionName))
             .ValidateDataAnnotations()
@@ -67,6 +75,19 @@ public static class DependencyInjection
 
         services.AddHttpContextAccessor();
         services.AddTransient<CorrelationPropagationHandler>();
+        services.AddHttpClient<IKalshiApiClient, KalshiApiClient>((serviceProvider, client) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>().Value;
+                client.BaseAddress = new Uri($"{options.BaseUrl.TrimEnd('/')}/", UriKind.Absolute);
+                client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            })
+            .AddStandardResilienceHandler(resilienceOptions =>
+            {
+                resilienceOptions.Retry.MaxRetryAttempts = 2;
+                resilienceOptions.AttemptTimeout.Timeout = TimeSpan.FromSeconds(kalshiApiOptions.TimeoutSeconds);
+                resilienceOptions.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(Math.Max(kalshiApiOptions.TimeoutSeconds * 3, kalshiApiOptions.TimeoutSeconds));
+                resilienceOptions.CircuitBreaker.SamplingDuration = GetCircuitBreakerSamplingDuration(kalshiApiOptions.TimeoutSeconds);
+            });
         services.AddHttpClient<INodeGatewayClient, NodeGatewayClient>((serviceProvider, client) =>
             {
                 var options = serviceProvider.GetRequiredService<IOptions<NodeGatewayOptions>>().Value;
@@ -79,20 +100,25 @@ public static class DependencyInjection
                 resilienceOptions.Retry.MaxRetryAttempts = nodeGatewayOptions.RetryAttempts;
                 resilienceOptions.AttemptTimeout.Timeout = TimeSpan.FromSeconds(nodeGatewayOptions.TimeoutSeconds);
                 resilienceOptions.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(Math.Max(nodeGatewayOptions.TimeoutSeconds * Math.Max(1, nodeGatewayOptions.RetryAttempts + 1), nodeGatewayOptions.TimeoutSeconds));
+                resilienceOptions.CircuitBreaker.SamplingDuration = GetCircuitBreakerSamplingDuration(nodeGatewayOptions.TimeoutSeconds);
             });
 
-        services.AddDbContext<KalshiIntegrationDbContext>(options => ConfigureDatabaseProvider(options, normalizedProvider, connectionString!));
+        services.AddDbContextFactory<KalshiIntegrationDbContext>(options => ConfigureDatabaseProvider(options, normalizedProvider, connectionString!));
+        services.AddScoped<KalshiIntegrationDbContext>(serviceProvider =>
+            serviceProvider.GetRequiredService<IDbContextFactory<KalshiIntegrationDbContext>>().CreateDbContext());
         services.AddScoped<EfTradingRepository>();
         services.AddScoped<ITradeIntentRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
         services.AddScoped<IOrderRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
         services.AddScoped<IPositionSnapshotRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
-        services.AddSingleton<IOperationalIssueStore, InMemoryOperationalIssueStore>();
-        services.AddSingleton<IAuditRecordStore, InMemoryAuditRecordStore>();
-        services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+        services.AddScoped<IOperationalIssueStore, EfOperationalIssueStore>();
+        services.AddScoped<IAuditRecordStore, EfAuditRecordStore>();
+        services.AddScoped<IIdempotencyStore, EfIdempotencyStore>();
+        services.AddScoped<KalshiBridgeService>();
         services.AddSingleton<InMemoryApplicationEventPublisher>();
         services.AddSingleton<IConnectionFactory>(sp => CreateRabbitMqConnectionFactory(sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value));
         services.AddSingleton<RabbitMqApplicationEventPublisher>();
         services.AddSingleton<IApplicationEventPublisher>(ResolveApplicationEventPublisher);
+        services.AddHostedService<RabbitMqResultEventConsumer>();
 
         var healthChecks = services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live", "ready"])
@@ -171,5 +197,10 @@ public static class DependencyInjection
         {
             return false;
         }
+    }
+
+    private static TimeSpan GetCircuitBreakerSamplingDuration(int timeoutSeconds)
+    {
+        return TimeSpan.FromSeconds(Math.Max(timeoutSeconds * 2, 30));
     }
 }

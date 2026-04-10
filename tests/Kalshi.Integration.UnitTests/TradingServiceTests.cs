@@ -68,6 +68,7 @@ public sealed class TradingServiceTests
         Order? capturedOrder = null;
         PositionSnapshot? capturedPosition = null;
         var events = new List<ExecutionEvent>();
+        var lifecycleEvents = new List<(string Stage, string? Details, DateTimeOffset OccurredAt)>();
         var tradeIntentRepository = new Mock<ITradeIntentRepository>(MockBehavior.Strict);
         var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
         var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
@@ -83,6 +84,10 @@ public sealed class TradingServiceTests
             .Setup(x => x.AddOrderEventAsync(It.IsAny<ExecutionEvent>(), It.IsAny<CancellationToken>()))
             .Callback<ExecutionEvent, CancellationToken>((executionEvent, _) => events.Add(executionEvent))
             .Returns(Task.CompletedTask);
+        orderRepository
+            .Setup(x => x.AddOrderLifecycleEventAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string, string?, DateTimeOffset, CancellationToken>((_, stage, details, occurredAt, _) => lifecycleEvents.Add((stage, details, occurredAt)))
+            .Returns(Task.CompletedTask);
         positionSnapshotRepository
             .Setup(x => x.UpsertPositionSnapshotAsync(It.IsAny<PositionSnapshot>(), It.IsAny<CancellationToken>()))
             .Callback<PositionSnapshot, CancellationToken>((snapshot, _) => capturedPosition = snapshot)
@@ -90,6 +95,9 @@ public sealed class TradingServiceTests
         orderRepository
             .Setup(x => x.GetOrderEventsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid orderId, CancellationToken _) => (IReadOnlyList<ExecutionEvent>)events.Where(x => x.OrderId == orderId).ToArray());
+        orderRepository
+            .Setup(x => x.GetOrderLifecycleEventsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, CancellationToken _) => (IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>)lifecycleEvents.ToArray());
 
         var service = CreateService(tradeIntentRepository.Object, orderRepository.Object, positionSnapshotRepository.Object);
 
@@ -162,6 +170,9 @@ public sealed class TradingServiceTests
         orderRepository
             .Setup(x => x.GetOrderEventsAsync(order.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<ExecutionEvent>)events);
+        orderRepository
+            .Setup(x => x.GetOrderLifecycleEventsAsync(order.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
 
         var service = CreateService(tradeIntentRepository.Object, orderRepository.Object, positionSnapshotRepository.Object);
 

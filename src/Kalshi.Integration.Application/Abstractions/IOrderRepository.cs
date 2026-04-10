@@ -14,4 +14,7 @@ public interface IOrderRepository
     Task<IReadOnlyList<Order>> GetOrdersAsync(CancellationToken cancellationToken = default);
     Task AddOrderEventAsync(ExecutionEvent executionEvent, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ExecutionEvent>> GetOrderEventsAsync(Guid orderId, CancellationToken cancellationToken = default);
+    Task AddOrderLifecycleEventAsync(Guid orderId, string stage, string? details, DateTimeOffset occurredAt, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>> GetOrderLifecycleEventsAsync(Guid orderId, CancellationToken cancellationToken = default);
+    Task<bool> TryAddResultEventAsync(Guid resultEventId, Guid? orderId, string name, string? correlationId, string? idempotencyKey, string payloadJson, DateTimeOffset occurredAt, CancellationToken cancellationToken = default);
 }

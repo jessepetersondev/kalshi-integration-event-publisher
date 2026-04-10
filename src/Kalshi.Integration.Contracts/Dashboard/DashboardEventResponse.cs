@@ -7,5 +7,7 @@ public sealed record DashboardEventResponse(
     Guid OrderId,
     string Ticker,
     string Status,
+    string Category,
+    string? Details,
     int FilledQuantity,
     DateTimeOffset OccurredAt);
