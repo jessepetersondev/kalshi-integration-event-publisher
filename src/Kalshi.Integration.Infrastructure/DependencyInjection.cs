@@ -32,6 +32,7 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("KalshiIntegration")
             ?? (normalizedProvider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-event-publisher.db" : null);
         var normalizedEventPublisherProvider = EventPublisherProviders.Normalize(configuration.GetValue<string>($"{EventPublisherOptions.SectionName}:Provider"));
+        var enableRabbitMqResultConsumer = configuration.GetValue($"{RabbitMqOptions.SectionName}:EnableResultConsumer", true);
         var kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
         var nodeGatewayOptions = configuration.GetSection(NodeGatewayOptions.SectionName).Get<NodeGatewayOptions>() ?? new NodeGatewayOptions();
 
@@ -118,7 +119,10 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionFactory>(sp => CreateRabbitMqConnectionFactory(sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value));
         services.AddSingleton<RabbitMqApplicationEventPublisher>();
         services.AddSingleton<IApplicationEventPublisher>(ResolveApplicationEventPublisher);
-        services.AddHostedService<RabbitMqResultEventConsumer>();
+        if (enableRabbitMqResultConsumer)
+        {
+            services.AddHostedService<RabbitMqResultEventConsumer>();
+        }
 
         var healthChecks = services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live", "ready"])
