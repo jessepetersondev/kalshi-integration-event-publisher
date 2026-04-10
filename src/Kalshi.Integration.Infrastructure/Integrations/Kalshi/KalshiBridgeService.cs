@@ -98,7 +98,7 @@ public sealed class KalshiBridgeService
     {
         var tradeIntent = await _tradingService.CreateTradeIntentAsync(BuildTradeIntentRequest(request), cancellationToken);
         var order = await _tradingService.CreateOrderAsync(new CreateOrderRequest(tradeIntent.Id), cancellationToken);
-        order = await PublishOrderAsync(order, cancellationToken);
+        order = await PublishOrderAsync(order, request, cancellationToken);
         order = await WaitForOrderActivityAsync(order.Id, order.UpdatedAt, cancellationToken);
         return BuildBridgeOrderEnvelope(order);
     }
@@ -132,7 +132,7 @@ public sealed class KalshiBridgeService
         {
             var cancelTradeIntent = await _tradingService.CreateTradeIntentAsync(BuildCancelTradeIntentRequest(order), cancellationToken);
             cancelOrder = await _tradingService.CreateOrderAsync(new CreateOrderRequest(cancelTradeIntent.Id), cancellationToken);
-            cancelOrder = await PublishOrderAsync(cancelOrder, cancellationToken);
+            cancelOrder = await PublishOrderAsync(cancelOrder, null, cancellationToken);
             cancelOrder = await WaitForOrderActivityAsync(cancelOrder.Id, cancelOrder.UpdatedAt, cancellationToken);
         }
 
@@ -175,9 +175,12 @@ public sealed class KalshiBridgeService
             ?? throw new KeyNotFoundException($"Order '{publisherOrderId}' was not found.");
     }
 
-    private async Task<OrderResponse> PublishOrderAsync(OrderResponse order, CancellationToken cancellationToken)
+    private async Task<OrderResponse> PublishOrderAsync(
+        OrderResponse order,
+        SubmitKalshiOrderRequest? bridgeRequest,
+        CancellationToken cancellationToken)
     {
-        var commandEvent = WeatherQuantCommandMapper.CreateOrderEvent(order, order.CorrelationId, order.CorrelationId);
+        var commandEvent = CreateOrderCommandEvent(order, bridgeRequest);
         await _tradingService.MarkOrderPublishAttemptedAsync(order.Id, commandEvent.OccurredAt, cancellationToken);
 
         try
@@ -191,6 +194,25 @@ public sealed class KalshiBridgeService
         }
 
         return await GetRequiredOrderAsync(order.Id, cancellationToken);
+    }
+
+    private static ApplicationEventEnvelope CreateOrderCommandEvent(OrderResponse order, SubmitKalshiOrderRequest? bridgeRequest)
+    {
+        var attributes = new Dictionary<string, string?>(WeatherQuantCommandMapper.MapOrderAttributes(order));
+        if (bridgeRequest is not null)
+        {
+            attributes["timeInForce"] = NormalizeTimeInForce(bridgeRequest.TimeInForce);
+            attributes["postOnly"] = bridgeRequest.PostOnly ? "true" : "false";
+            attributes["cancelOrderOnPause"] = bridgeRequest.CancelOrderOnPause ? "true" : "false";
+        }
+
+        return ApplicationEventEnvelope.Create(
+            category: "trading",
+            name: "order.created",
+            resourceId: order.Id.ToString(),
+            correlationId: order.CorrelationId,
+            idempotencyKey: order.CorrelationId,
+            attributes: attributes);
     }
 
     private async Task<OrderResponse> WaitForOrderActivityAsync(Guid orderId, DateTimeOffset baselineUpdatedAt, CancellationToken cancellationToken)
@@ -229,8 +251,21 @@ public sealed class KalshiBridgeService
     }
 
     private static bool ShouldCreateNewCancelOrder(OrderResponse cancelOrder)
-        => string.Equals(cancelOrder.Status, "rejected", StringComparison.OrdinalIgnoreCase)
-            || NormalizeToken(cancelOrder.PublishStatus) == "publishpendingreview";
+    {
+        // Treat unresolved or failed cancel attempts as the active cancel request so repeated
+        // bridge calls stay idempotent instead of minting endless replacement cancel orders.
+        if (NormalizeToken(cancelOrder.PublishStatus) == "publishpendingreview")
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancelOrder.LastResultStatus))
+        {
+            return false;
+        }
+
+        return string.Equals(cancelOrder.Status, "rejected", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static CreateTradeIntentRequest BuildCancelTradeIntentRequest(OrderResponse order)
     {
@@ -254,6 +289,19 @@ public sealed class KalshiBridgeService
 
     private static bool IsTerminalStatus(string status)
         => TerminalStatuses.Contains(status);
+
+    private static string? NormalizeTimeInForce(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        return string.Equals(normalized, "good_til_cancelled", StringComparison.OrdinalIgnoreCase)
+            ? "good_till_canceled"
+            : normalized;
+    }
 
     private static string? ResolveCancelBridgeStatusOverride(OrderResponse? cancelOrder)
     {

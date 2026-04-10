@@ -109,6 +109,9 @@ public sealed class KalshiBridgeServiceTests
         Assert.Equal("entry", publishedEvent.Attributes["actionType"]);
         Assert.Equal("2", publishedEvent.Attributes["quantity"]);
         Assert.Equal("0.4523", publishedEvent.Attributes["limitPrice"]);
+        Assert.Equal("good_till_canceled", publishedEvent.Attributes["timeInForce"]);
+        Assert.Equal("true", publishedEvent.Attributes["postOnly"]);
+        Assert.Equal("false", publishedEvent.Attributes["cancelOrderOnPause"]);
         apiClient.VerifyNoOtherCalls();
     }
 
@@ -249,6 +252,77 @@ public sealed class KalshiBridgeServiceTests
         Assert.Equal("cancel", cancelEvent.Attributes["actionType"]);
         Assert.Equal(publisherOrderId.ToString(), cancelEvent.Attributes["targetPublisherOrderId"]);
         Assert.Equal("client-1", cancelEvent.Attributes["targetClientOrderId"]);
+        apiClient.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CancelOrderAsync_ShouldReuseCancelOrderWhenPublishConfirmationIsPendingReview()
+    {
+        var publisher = new Mock<IApplicationEventPublisher>(MockBehavior.Strict);
+        publisher
+            .SetupSequence(x => x.PublishAsync(It.IsAny<ApplicationEventEnvelope>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .ThrowsAsync(new PublishConfirmationException("broker confirmation pending"));
+
+        var (bridge, repository, queryService, _, apiClient, _) = CreateBridge(applicationEventPublisher: publisher.Object);
+
+        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+
+        await bridge.CancelOrderAsync(publisherOrderId);
+        await bridge.CancelOrderAsync(publisherOrderId);
+
+        var cancelOrders = (await repository.GetOrdersAsync())
+            .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel)
+            .ToArray();
+
+        var cancelOrder = Assert.Single(cancelOrders);
+        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+
+        Assert.NotNull(cancelProjection);
+        Assert.Equal("publishpendingreview", cancelProjection!.PublishStatus);
+        Assert.Equal("broker confirmation pending", cancelProjection.LastResultMessage);
+        publisher.Verify(x => x.PublishAsync(It.IsAny<ApplicationEventEnvelope>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        apiClient.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CancelOrderAsync_ShouldReuseDeadLetteredCancelOrderWithoutCreatingNewRetry()
+    {
+        var (bridge, repository, queryService, tradingService, apiClient, publisher) = CreateBridge();
+
+        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+
+        await bridge.CancelOrderAsync(publisherOrderId);
+
+        var cancelOrder = Assert.Single((await repository.GetOrdersAsync())
+            .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
+
+        var applied = await tradingService.ApplyExecutorResultAsync(
+            ApplicationEventEnvelope.Create(
+                category: "execution",
+                name: "order.dead_lettered",
+                resourceId: cancelOrder.Id.ToString(),
+                correlationId: cancelOrder.TradeIntent.CorrelationId,
+                attributes: new Dictionary<string, string?>
+                {
+                    ["publisherOrderId"] = cancelOrder.Id.ToString(),
+                    ["deadLetterQueue"] = "executor.order.dlq",
+                }));
+
+        Assert.True(applied);
+
+        await bridge.CancelOrderAsync(publisherOrderId);
+        await bridge.CancelOrderAsync(publisherOrderId);
+
+        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+        Assert.NotNull(cancelProjection);
+        Assert.Equal("rejected", cancelProjection!.Status);
+        Assert.Equal("order.dead_lettered", cancelProjection.LastResultStatus);
+        Assert.Equal("executor.order.dlq", cancelProjection.LastResultMessage);
+        Assert.Equal(2, publisher.GetPublishedEvents().Count);
+        Assert.Single((await repository.GetOrdersAsync()).Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
         apiClient.VerifyNoOtherCalls();
     }
 
