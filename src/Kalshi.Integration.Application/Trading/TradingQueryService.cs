@@ -1,8 +1,9 @@
+using System.Text;
+
 using Kalshi.Integration.Application.Abstractions;
 using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.Positions;
 using Kalshi.Integration.Domain.Orders;
-using System.Text;
 
 namespace Kalshi.Integration.Application.Trading;
 

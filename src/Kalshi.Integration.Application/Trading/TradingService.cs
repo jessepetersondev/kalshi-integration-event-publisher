@@ -1,15 +1,16 @@
+using System.Text.Json;
+
 using Kalshi.Integration.Application.Abstractions;
+using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Risk;
 using Kalshi.Integration.Contracts.Integrations;
 using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.TradeIntents;
-using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Domain.Common;
 using Kalshi.Integration.Domain.Executions;
 using Kalshi.Integration.Domain.Orders;
 using Kalshi.Integration.Domain.Positions;
 using Kalshi.Integration.Domain.TradeIntents;
-using System.Text.Json;
 
 namespace Kalshi.Integration.Application.Trading;
 
