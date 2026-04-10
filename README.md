@@ -87,6 +87,274 @@ The gateway only validates and forwards simulated execution updates. It does not
 
 The API uses version `v1` in the URL path and also supports `x-api-version`. All checked-in routes currently target v1.
 
+## Example bodies
+
+All HTTP examples below are shown in the camelCase JSON shape produced and consumed by the running API.
+
+### Issue a development token
+
+Request:
+
+```json
+{
+  "roles": ["admin", "operator", "trader", "integration"],
+  "subject": "readme-user"
+}
+```
+
+Response:
+
+```json
+{
+  "accessToken": "<jwt>",
+  "tokenType": "Bearer",
+  "expiresAtUtc": "2026-04-10T02:52:56.4394099+00:00",
+  "roles": ["admin", "operator", "trader", "integration"],
+  "issuer": "kalshi-integration-event-publisher",
+  "audience": "kalshi-integration-event-publisher-clients"
+}
+```
+
+### Create a trade intent
+
+Representative request body for `POST /api/v1/trade-intents`:
+
+```json
+{
+  "ticker": "KXBTC-README",
+  "side": "yes",
+  "quantity": 2,
+  "limitPrice": 0.45,
+  "strategyName": "Readme Example",
+  "correlationId": "readme-trade-corr",
+  "actionType": "entry",
+  "originService": "docs-example",
+  "decisionReason": "README example request",
+  "commandSchemaVersion": "weather-quant-command.v1"
+}
+```
+
+Representative `201 Created` response:
+
+```json
+{
+  "id": "a75a2e9a-3604-43d1-91f5-18bea50f176e",
+  "ticker": "KXBTC-README",
+  "side": "yes",
+  "quantity": 2,
+  "limitPrice": 0.45,
+  "strategyName": "Readme Example",
+  "correlationId": "readme-trade-corr",
+  "actionType": "entry",
+  "originService": "docs-example",
+  "decisionReason": "README example request",
+  "commandSchemaVersion": "weather-quant-command.v1",
+  "targetPositionTicker": null,
+  "targetPositionSide": null,
+  "targetPublisherOrderId": null,
+  "targetClientOrderId": null,
+  "targetExternalOrderId": null,
+  "createdAt": "2026-04-10T01:53:09.1339086+00:00",
+  "riskDecision": {
+    "accepted": true,
+    "decision": "accepted",
+    "reasons": [],
+    "maxOrderSize": 10,
+    "duplicateCorrelationIdDetected": false
+  }
+}
+```
+
+### Create an order
+
+Representative request body for `POST /api/v1/orders`:
+
+```json
+{
+  "tradeIntentId": "a75a2e9a-3604-43d1-91f5-18bea50f176e"
+}
+```
+
+Representative `201 Created` response:
+
+```json
+{
+  "id": "e8832f62-a746-44e2-99c7-c2a33be61baf",
+  "tradeIntentId": "a75a2e9a-3604-43d1-91f5-18bea50f176e",
+  "ticker": "KXBTC-README",
+  "side": "yes",
+  "quantity": 2,
+  "limitPrice": 0.45,
+  "strategyName": "Readme Example",
+  "correlationId": "readme-trade-corr",
+  "actionType": "entry",
+  "originService": "docs-example",
+  "decisionReason": "README example request",
+  "commandSchemaVersion": "weather-quant-command.v1",
+  "targetPositionTicker": null,
+  "targetPositionSide": null,
+  "targetPublisherOrderId": null,
+  "targetClientOrderId": null,
+  "targetExternalOrderId": null,
+  "status": "pending",
+  "publishStatus": "publishconfirmed",
+  "lastResultStatus": null,
+  "lastResultMessage": null,
+  "externalOrderId": null,
+  "clientOrderId": null,
+  "commandEventId": "8db4b920-8e2f-4dac-bc7f-b0970f06ebdf",
+  "filledQuantity": 0,
+  "createdAt": "2026-04-10T01:53:09.3428607+00:00",
+  "updatedAt": "2026-04-10T01:53:09.4615086+00:00",
+  "events": [
+    {
+      "status": "pending",
+      "filledQuantity": 0,
+      "occurredAt": "2026-04-10T01:53:09.3428607+00:00"
+    }
+  ],
+  "lifecycleEvents": [
+    {
+      "stage": "order_created",
+      "details": null,
+      "occurredAt": "2026-04-10T01:53:09.3428607+00:00"
+    },
+    {
+      "stage": "publish_attempted",
+      "details": null,
+      "occurredAt": "2026-04-10T01:53:09.4420022+00:00"
+    },
+    {
+      "stage": "publish_confirmed",
+      "details": "commandEventId=8db4b920-8e2f-4dac-bc7f-b0970f06ebdf",
+      "occurredAt": "2026-04-10T01:53:09.4615086+00:00"
+    }
+  ]
+}
+```
+
+### Apply an execution update
+
+Representative request body for `POST /api/v1/integrations/execution-updates`:
+
+```json
+{
+  "orderId": "e8832f62-a746-44e2-99c7-c2a33be61baf",
+  "status": "accepted",
+  "filledQuantity": 0,
+  "occurredAt": "2026-04-10T02:55:00Z",
+  "correlationId": "readme-exec-corr"
+}
+```
+
+Representative `202 Accepted` response:
+
+```json
+{
+  "orderId": "e8832f62-a746-44e2-99c7-c2a33be61baf",
+  "status": "accepted",
+  "filledQuantity": 0,
+  "occurredAt": "2026-04-10T02:55:00+00:00",
+  "order": {
+    "id": "e8832f62-a746-44e2-99c7-c2a33be61baf",
+    "tradeIntentId": "a75a2e9a-3604-43d1-91f5-18bea50f176e",
+    "ticker": "KXBTC-README",
+    "side": "yes",
+    "quantity": 2,
+    "limitPrice": 0.45,
+    "strategyName": "Readme Example",
+    "correlationId": "readme-trade-corr",
+    "actionType": "entry",
+    "originService": "docs-example",
+    "decisionReason": "README example request",
+    "commandSchemaVersion": "weather-quant-command.v1",
+    "targetPositionTicker": null,
+    "targetPositionSide": null,
+    "targetPublisherOrderId": null,
+    "targetClientOrderId": null,
+    "targetExternalOrderId": null,
+    "status": "accepted",
+    "publishStatus": "publishconfirmed",
+    "lastResultStatus": null,
+    "lastResultMessage": null,
+    "externalOrderId": null,
+    "clientOrderId": null,
+    "commandEventId": "8db4b920-8e2f-4dac-bc7f-b0970f06ebdf",
+    "filledQuantity": 0,
+    "createdAt": "2026-04-10T01:53:09.3428607+00:00",
+    "updatedAt": "2026-04-10T02:55:00+00:00",
+    "events": [
+      {
+        "status": "pending",
+        "filledQuantity": 0,
+        "occurredAt": "2026-04-10T01:53:09.3428607+00:00"
+      },
+      {
+        "status": "accepted",
+        "filledQuantity": 0,
+        "occurredAt": "2026-04-10T02:55:00+00:00"
+      }
+    ],
+    "lifecycleEvents": [
+      {
+        "stage": "order_created",
+        "details": null,
+        "occurredAt": "2026-04-10T01:53:09.3428607+00:00"
+      },
+      {
+        "stage": "publish_attempted",
+        "details": null,
+        "occurredAt": "2026-04-10T01:53:09.4420022+00:00"
+      },
+      {
+        "stage": "publish_confirmed",
+        "details": "commandEventId=8db4b920-8e2f-4dac-bc7f-b0970f06ebdf",
+        "occurredAt": "2026-04-10T01:53:09.4615086+00:00"
+      }
+    ]
+  }
+}
+```
+
+### Standard error body
+
+Representative `400 Bad Request` response for an oversized trade intent:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Invalid trade intent",
+  "status": 400,
+  "detail": "Quantity exceeds max order size of 10.",
+  "traceId": "00-24c7ab02c1efbff5cb11996a05b86788-2cfd1bd988756930-01"
+}
+```
+
+### Health response
+
+Representative `GET /health/ready` response:
+
+```json
+{
+  "status": "Healthy",
+  "totalDurationMs": 23.6715,
+  "entries": {
+    "self": {
+      "status": "Healthy",
+      "description": null,
+      "durationMs": 0.8244,
+      "error": null
+    },
+    "database": {
+      "status": "Healthy",
+      "description": "SQLite connectivity verified.",
+      "durationMs": 19.1651,
+      "error": null
+    }
+  }
+}
+```
+
 ## Local development
 
 ### Prerequisites
