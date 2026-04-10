@@ -327,6 +327,34 @@ public sealed class KalshiBridgeServiceTests
     }
 
     [Fact]
+    public async Task CancelOrderAsync_ShouldReuseRejectedCancelOrderWithoutCreatingNewRetry()
+    {
+        var (bridge, repository, queryService, tradingService, apiClient, publisher) = CreateBridge();
+
+        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+
+        await bridge.CancelOrderAsync(publisherOrderId);
+
+        var cancelOrder = Assert.Single((await repository.GetOrdersAsync())
+            .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
+
+        cancelOrder.TransitionTo(Domain.Orders.OrderStatus.Rejected, 0, DateTimeOffset.UtcNow);
+        await repository.UpdateOrderAsync(cancelOrder);
+
+        await bridge.CancelOrderAsync(publisherOrderId);
+        await bridge.CancelOrderAsync(publisherOrderId);
+
+        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+        Assert.NotNull(cancelProjection);
+        Assert.Equal("rejected", cancelProjection!.Status);
+        Assert.Null(cancelProjection.LastResultStatus);
+        Assert.Equal(2, publisher.GetPublishedEvents().Count);
+        Assert.Single((await repository.GetOrdersAsync()).Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
+        apiClient.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task PlaceOrderAsync_ShouldRejectInvalidSideBeforeCallingKalshi()
     {
         var (bridge, repository, _, _, apiClient, _) = CreateBridge();

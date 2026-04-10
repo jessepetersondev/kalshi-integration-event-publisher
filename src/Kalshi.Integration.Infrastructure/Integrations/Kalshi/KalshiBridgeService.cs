@@ -128,7 +128,7 @@ public sealed class KalshiBridgeService
         }
 
         var cancelOrder = await GetLatestCancelOrderAsync(publisherOrderId, cancellationToken);
-        if (cancelOrder is null || ShouldCreateNewCancelOrder(cancelOrder))
+        if (cancelOrder is null)
         {
             var cancelTradeIntent = await _tradingService.CreateTradeIntentAsync(BuildCancelTradeIntentRequest(order), cancellationToken);
             cancelOrder = await _tradingService.CreateOrderAsync(new CreateOrderRequest(cancelTradeIntent.Id), cancellationToken);
@@ -248,23 +248,6 @@ public sealed class KalshiBridgeService
         return cancelOrder is null
             ? null
             : await _tradingQueryService.GetOrderAsync(cancelOrder.Id, cancellationToken);
-    }
-
-    private static bool ShouldCreateNewCancelOrder(OrderResponse cancelOrder)
-    {
-        // Treat unresolved or failed cancel attempts as the active cancel request so repeated
-        // bridge calls stay idempotent instead of minting endless replacement cancel orders.
-        if (NormalizeToken(cancelOrder.PublishStatus) == "publishpendingreview")
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(cancelOrder.LastResultStatus))
-        {
-            return false;
-        }
-
-        return string.Equals(cancelOrder.Status, "rejected", StringComparison.OrdinalIgnoreCase);
     }
 
     private static CreateTradeIntentRequest BuildCancelTradeIntentRequest(OrderResponse order)
