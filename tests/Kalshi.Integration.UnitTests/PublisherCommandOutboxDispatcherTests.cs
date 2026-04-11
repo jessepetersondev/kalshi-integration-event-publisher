@@ -16,10 +16,10 @@ public sealed class PublisherCommandOutboxDispatcherTests
     [Fact]
     public async Task DispatchAsync_ShouldRetryDurablyAndEventuallyConfirmPublication()
     {
-        var repository = new InMemoryTradingRepository();
-        var submissionService = new OrderSubmissionService(repository, repository, repository);
-        var publisher = new FlakyApplicationEventPublisher(failuresBeforeSuccess: 1);
-        var dispatcher = new PublisherCommandOutboxDispatcher(
+        InMemoryTradingRepository repository = new();
+        OrderSubmissionService submissionService = new(repository, repository, repository);
+        FlakyApplicationEventPublisher publisher = new(failuresBeforeSuccess: 1);
+        PublisherCommandOutboxDispatcher dispatcher = new(
             repository,
             publisher,
             new InMemoryOperationalIssueStore(),
@@ -32,10 +32,10 @@ public sealed class PublisherCommandOutboxDispatcherTests
             }),
             NullLogger<PublisherCommandOutboxDispatcher>.Instance);
 
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout", "corr-outbox");
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout", "corr-outbox");
         await repository.AddTradeIntentAsync(tradeIntent);
 
-        var created = await submissionService.SubmitOrderAsync(
+        Contracts.Orders.OrderResponse created = await submissionService.SubmitOrderAsync(
             new Contracts.Orders.CreateOrderRequest(tradeIntent.Id),
             "corr-outbox",
             "corr-outbox");
@@ -43,7 +43,7 @@ public sealed class PublisherCommandOutboxDispatcherTests
         Assert.NotNull(created.CommandEventId);
 
         await dispatcher.DispatchAsync(created.CommandEventId!.Value);
-        var afterFailure = await repository.GetOrderAsync(created.Id);
+        Order? afterFailure = await repository.GetOrderAsync(created.Id);
         Assert.NotNull(afterFailure);
         Assert.Equal(OrderPublishStatus.RetryScheduled, afterFailure!.PublishStatus);
         Assert.Equal(0, publisher.SuccessfulPublishCount);
@@ -51,20 +51,15 @@ public sealed class PublisherCommandOutboxDispatcherTests
         await Task.Delay(5);
         await dispatcher.DrainDueMessagesAsync();
 
-        var afterSuccess = await repository.GetOrderAsync(created.Id);
+        Order? afterSuccess = await repository.GetOrderAsync(created.Id);
         Assert.NotNull(afterSuccess);
         Assert.Equal(OrderPublishStatus.PublishConfirmed, afterSuccess!.PublishStatus);
         Assert.Equal(1, publisher.SuccessfulPublishCount);
     }
 
-    private sealed class FlakyApplicationEventPublisher : IApplicationEventPublisher
+    private sealed class FlakyApplicationEventPublisher(int failuresBeforeSuccess) : IApplicationEventPublisher
     {
-        private int _remainingFailures;
-
-        public FlakyApplicationEventPublisher(int failuresBeforeSuccess)
-        {
-            _remainingFailures = failuresBeforeSuccess;
-        }
+        private int _remainingFailures = failuresBeforeSuccess;
 
         public int SuccessfulPublishCount { get; private set; }
 

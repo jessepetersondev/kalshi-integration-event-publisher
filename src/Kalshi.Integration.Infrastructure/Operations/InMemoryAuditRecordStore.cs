@@ -24,8 +24,8 @@ public sealed class InMemoryAuditRecordStore : IAuditRecordStore
 
     public Task<IReadOnlyList<AuditRecord>> GetRecentAsync(string? category = null, int hours = 24, int limit = 100, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow.AddHours(-Math.Abs(hours));
-        var records = _records
+        DateTimeOffset cutoff = DateTimeOffset.UtcNow.AddHours(-Math.Abs(hours));
+        AuditRecord[] records = _records
             .Where(record => record.OccurredAt >= cutoff)
             .Where(record => string.IsNullOrWhiteSpace(category) || string.Equals(record.Category, category, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(record => record.OccurredAt)

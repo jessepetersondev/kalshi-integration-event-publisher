@@ -8,30 +8,24 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Reports publisher command outbox health based on pending age and manual-intervention state.
 /// </summary>
-public sealed class PublisherOutboxHealthCheck : IHealthCheck
+public sealed class PublisherOutboxHealthCheck(
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<RabbitMqOptions> options) : IHealthCheck
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqOptions _options;
-
-    public PublisherOutboxHealthCheck(
-        IServiceScopeFactory serviceScopeFactory,
-        IOptions<RabbitMqOptions> options)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _options = options.Value;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqOptions _options = options.Value;
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        using var scope = _serviceScopeFactory.CreateScope();
-        var outboxStore = scope.ServiceProvider.GetRequiredService<IPublisherCommandOutboxStore>();
-        var now = DateTimeOffset.UtcNow;
-        var snapshot = await outboxStore.GetHealthSnapshotAsync(now, cancellationToken);
-        var oldestPendingAge = snapshot.OldestPendingCreatedAt.HasValue
+        using IServiceScope scope = _serviceScopeFactory.CreateScope();
+        IPublisherCommandOutboxStore outboxStore = scope.ServiceProvider.GetRequiredService<IPublisherCommandOutboxStore>();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Contracts.Reliability.OutboxHealthSnapshot snapshot = await outboxStore.GetHealthSnapshotAsync(now, cancellationToken);
+        TimeSpan oldestPendingAge = snapshot.OldestPendingCreatedAt.HasValue
             ? now - snapshot.OldestPendingCreatedAt.Value
             : TimeSpan.Zero;
 
-        var data = new Dictionary<string, object>
+        Dictionary<string, object> data = new()
         {
             ["pendingCount"] = snapshot.PendingCount,
             ["manualInterventionCount"] = snapshot.ManualInterventionCount,

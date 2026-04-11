@@ -13,7 +13,7 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 
     public Task<IdempotencyRecord?> GetAsync(string scope, string key, CancellationToken cancellationToken = default)
     {
-        _records.TryGetValue(BuildKey(scope, key), out var record);
+        _records.TryGetValue(BuildKey(scope, key), out IdempotencyRecord? record);
         return Task.FromResult(record);
     }
 

@@ -11,10 +11,10 @@ public sealed class ExecutionAndPositionTests
     [Fact]
     public void ExecutionEvent_ShouldCaptureOrderEventData()
     {
-        var orderId = Guid.NewGuid();
-        var occurredAt = DateTimeOffset.UtcNow;
+        Guid orderId = Guid.NewGuid();
+        DateTimeOffset occurredAt = DateTimeOffset.UtcNow;
 
-        var executionEvent = new ExecutionEvent(orderId, OrderStatus.PartiallyFilled, 1, occurredAt);
+        ExecutionEvent executionEvent = new(orderId, OrderStatus.PartiallyFilled, 1, occurredAt);
 
         Assert.Equal(orderId, executionEvent.OrderId);
         Assert.Equal(OrderStatus.PartiallyFilled, executionEvent.Status);
@@ -37,8 +37,8 @@ public sealed class ExecutionAndPositionTests
     [Fact]
     public void ExecutionEvent_WithId_ShouldOverrideGeneratedId()
     {
-        var persistedId = Guid.NewGuid();
-        var executionEvent = new ExecutionEvent(Guid.NewGuid(), OrderStatus.Accepted, 0, DateTimeOffset.UtcNow)
+        Guid persistedId = Guid.NewGuid();
+        ExecutionEvent executionEvent = new ExecutionEvent(Guid.NewGuid(), OrderStatus.Accepted, 0, DateTimeOffset.UtcNow)
             .WithId(persistedId);
 
         Assert.Equal(persistedId, executionEvent.Id);
@@ -47,7 +47,7 @@ public sealed class ExecutionAndPositionTests
     [Fact]
     public void PositionSnapshot_ShouldNormalizeTickerAndRoundAveragePrice()
     {
-        var snapshot = new PositionSnapshot(" kxbtc-26mar2808 ", TradeSide.No, 4, 0.65439m, DateTimeOffset.UtcNow);
+        PositionSnapshot snapshot = new(" kxbtc-26mar2808 ", TradeSide.No, 4, 0.65439m, DateTimeOffset.UtcNow);
 
         Assert.Equal("KXBTC-26MAR2808", snapshot.Ticker);
         Assert.Equal(TradeSide.No, snapshot.Side);

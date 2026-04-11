@@ -18,29 +18,20 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Consumes executor result events from RabbitMQ and projects them into publisher-owned order lifecycle state.
 /// </summary>
-public sealed class RabbitMqResultEventConsumer : BackgroundService
+public sealed class RabbitMqResultEventConsumer(
+    IConnectionFactory connectionFactory,
+    IServiceScopeFactory serviceScopeFactory,
+    RabbitMqTopologyBootstrapper topologyBootstrapper,
+    IOptions<RabbitMqOptions> options,
+    ILogger<RabbitMqResultEventConsumer> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IConnectionFactory _connectionFactory;
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper;
-    private readonly ILogger<RabbitMqResultEventConsumer> _logger;
-    private readonly RabbitMqOptions _options;
-
-    public RabbitMqResultEventConsumer(
-        IConnectionFactory connectionFactory,
-        IServiceScopeFactory serviceScopeFactory,
-        RabbitMqTopologyBootstrapper topologyBootstrapper,
-        IOptions<RabbitMqOptions> options,
-        ILogger<RabbitMqResultEventConsumer> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _serviceScopeFactory = serviceScopeFactory;
-        _topologyBootstrapper = topologyBootstrapper;
-        _logger = logger;
-        _options = options.Value;
-    }
+    private readonly IConnectionFactory _connectionFactory = connectionFactory;
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper = topologyBootstrapper;
+    private readonly ILogger<RabbitMqResultEventConsumer> _logger = logger;
+    private readonly RabbitMqOptions _options = options.Value;
 
     public async Task HandlePayloadAsync(string payload, CancellationToken cancellationToken = default)
     {
@@ -57,9 +48,9 @@ public sealed class RabbitMqResultEventConsumer : BackgroundService
             throw;
         }
 
-        using var scope = _serviceScopeFactory.CreateScope();
-        var tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
-        var applied = await tradingService.ApplyExecutorResultAsync(envelope, cancellationToken);
+        using IServiceScope scope = _serviceScopeFactory.CreateScope();
+        TradingService tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
+        bool applied = await tradingService.ApplyExecutorResultAsync(envelope, cancellationToken);
         if (!applied)
         {
             _logger.LogInformation("Skipped duplicate executor result event {EventId}.", envelope.Id);
@@ -77,16 +68,16 @@ public sealed class RabbitMqResultEventConsumer : BackgroundService
         {
             try
             {
-                using var connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.results");
-                using var channel = connection.CreateModel();
+                using IConnection connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.results");
+                using IModel channel = connection.CreateModel();
 
                 _topologyBootstrapper.EnsureTopology(channel);
                 channel.BasicQos(0, 1, false);
 
-                var consumer = new AsyncEventingBasicConsumer(channel);
+                AsyncEventingBasicConsumer consumer = new(channel);
                 consumer.Received += async (_, args) =>
                 {
-                    var payload = Encoding.UTF8.GetString(args.Body.ToArray());
+                    string payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
                     try
                     {
@@ -130,8 +121,8 @@ public sealed class RabbitMqResultEventConsumer : BackgroundService
 
     private async Task RecordIssueAsync(string source, string message, string? details, CancellationToken cancellationToken)
     {
-        using var scope = _serviceScopeFactory.CreateScope();
-        var issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
+        using IServiceScope scope = _serviceScopeFactory.CreateScope();
+        IOperationalIssueStore issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
         await issueStore.AddAsync(
             OperationalIssue.Create("integration", "error", source, message, details),
             cancellationToken);

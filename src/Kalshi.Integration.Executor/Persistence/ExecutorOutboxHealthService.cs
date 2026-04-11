@@ -6,26 +6,21 @@ namespace Kalshi.Integration.Executor.Persistence;
 /// <summary>
 /// Summarizes executor outbox health for monitoring and readiness checks.
 /// </summary>
-public sealed class ExecutorOutboxHealthService
+public sealed class ExecutorOutboxHealthService(ExecutorDbContext dbContext)
 {
-    private readonly ExecutorDbContext _dbContext;
-
-    public ExecutorOutboxHealthService(ExecutorDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly ExecutorDbContext _dbContext = dbContext;
 
     public async Task<OutboxHealthSnapshot> GetSnapshotAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
-        var pendingQuery = _dbContext.OutboxMessages
+        IQueryable<Entities.ExecutorOutboxMessageEntity> pendingQuery = _dbContext.OutboxMessages
             .AsNoTracking()
             .Where(x => x.Status == OutboxMessageStatus.Pending.ToString() || x.Status == OutboxMessageStatus.InFlight.ToString());
 
-        var pendingCount = await pendingQuery.LongCountAsync(cancellationToken);
-        var manualInterventionCount = await _dbContext.OutboxMessages
+        long pendingCount = await pendingQuery.LongCountAsync(cancellationToken);
+        long manualInterventionCount = await _dbContext.OutboxMessages
             .AsNoTracking()
             .LongCountAsync(x => x.Status == OutboxMessageStatus.ManualInterventionRequired.ToString(), cancellationToken);
-        var pendingCreatedAt = await pendingQuery
+        List<DateTimeOffset> pendingCreatedAt = await pendingQuery
             .Select(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
         DateTimeOffset? oldestPendingCreatedAt = pendingCreatedAt.Count == 0

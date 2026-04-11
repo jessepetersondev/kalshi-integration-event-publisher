@@ -7,43 +7,35 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Samples RabbitMQ queue state and derives backlog-age and growth signals over time.
 /// </summary>
-public sealed class RabbitMqQueueInspector
+public sealed class RabbitMqQueueInspector(
+    IConnectionFactory connectionFactory,
+    RabbitMqTopologyBootstrapper topologyBootstrapper,
+    IOptions<RabbitMqOptions> options,
+    ILogger<RabbitMqQueueInspector> logger)
 {
-    private readonly IConnectionFactory _connectionFactory;
-    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper;
-    private readonly RabbitMqOptions _options;
-    private readonly ILogger<RabbitMqQueueInspector> _logger;
+    private readonly IConnectionFactory _connectionFactory = connectionFactory;
+    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper = topologyBootstrapper;
+    private readonly RabbitMqOptions _options = options.Value;
+    private readonly ILogger<RabbitMqQueueInspector> _logger = logger;
     private readonly object _syncRoot = new();
     private readonly Dictionary<string, QueueObservationState> _queueStates = new(StringComparer.Ordinal);
-
-    public RabbitMqQueueInspector(
-        IConnectionFactory connectionFactory,
-        RabbitMqTopologyBootstrapper topologyBootstrapper,
-        IOptions<RabbitMqOptions> options,
-        ILogger<RabbitMqQueueInspector> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _topologyBootstrapper = topologyBootstrapper;
-        _options = options.Value;
-        _logger = logger;
-    }
 
     public Task<RabbitMqQueueDiagnosticsSnapshot> CaptureAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.queue-inspector");
-        using var channel = connection.CreateModel();
+        using IConnection connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.queue-inspector");
+        using IModel channel = connection.CreateModel();
         _topologyBootstrapper.EnsureTopology(channel);
 
-        var capturedAt = DateTimeOffset.UtcNow;
-        var queues = new[]
-        {
+        DateTimeOffset capturedAt = DateTimeOffset.UtcNow;
+        RabbitMqQueueSnapshot[] queues =
+        [
             CaptureQueue(channel, _options.ExecutorQueue, isCritical: true, isDeadLetter: false, capturedAt),
             CaptureQueue(channel, _options.PublisherResultsQueue, isCritical: true, isDeadLetter: false, capturedAt),
             CaptureQueue(channel, _options.ExecutorDeadLetterQueue, isCritical: false, isDeadLetter: true, capturedAt),
             CaptureQueue(channel, _options.PublisherResultsDeadLetterQueue, isCritical: false, isDeadLetter: true, capturedAt),
-        };
+        ];
 
         _logger.LogDebug("Captured RabbitMQ queue diagnostics for {QueueCount} queues.", queues.Length);
         return Task.FromResult(new RabbitMqQueueDiagnosticsSnapshot(capturedAt, queues));
@@ -56,13 +48,13 @@ public sealed class RabbitMqQueueInspector
         bool isDeadLetter,
         DateTimeOffset capturedAt)
     {
-        var declaration = channel.QueueDeclarePassive(queueName);
-        var messageCount = (long)declaration.MessageCount;
-        var consumerCount = (long)declaration.ConsumerCount;
+        QueueDeclareOk declaration = channel.QueueDeclarePassive(queueName);
+        long messageCount = (long)declaration.MessageCount;
+        long consumerCount = (long)declaration.ConsumerCount;
 
         lock (_syncRoot)
         {
-            if (!_queueStates.TryGetValue(queueName, out var state))
+            if (!_queueStates.TryGetValue(queueName, out QueueObservationState? state))
             {
                 state = new QueueObservationState();
                 _queueStates[queueName] = state;
@@ -77,7 +69,7 @@ public sealed class RabbitMqQueueInspector
                 state.NonEmptySince = null;
             }
 
-            var growth = Math.Max(0, messageCount - state.PreviousMessageCount);
+            long growth = Math.Max(0, messageCount - state.PreviousMessageCount);
             state.PreviousMessageCount = messageCount;
 
             return new RabbitMqQueueSnapshot(

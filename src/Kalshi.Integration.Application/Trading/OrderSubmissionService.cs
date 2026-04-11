@@ -9,21 +9,14 @@ namespace Kalshi.Integration.Application.Trading;
 /// Creates publisher-owned orders and queues their outbound command messages
 /// in the same durable transaction.
 /// </summary>
-public sealed class OrderSubmissionService
+public sealed class OrderSubmissionService(
+    ITradeIntentRepository tradeIntentRepository,
+    IOrderCommandSubmissionStore submissionStore,
+    IOrderRepository orderRepository)
 {
-    private readonly ITradeIntentRepository _tradeIntentRepository;
-    private readonly IOrderCommandSubmissionStore _submissionStore;
-    private readonly IOrderRepository _orderRepository;
-
-    public OrderSubmissionService(
-        ITradeIntentRepository tradeIntentRepository,
-        IOrderCommandSubmissionStore submissionStore,
-        IOrderRepository orderRepository)
-    {
-        _tradeIntentRepository = tradeIntentRepository;
-        _submissionStore = submissionStore;
-        _orderRepository = orderRepository;
-    }
+    private readonly ITradeIntentRepository _tradeIntentRepository = tradeIntentRepository;
+    private readonly IOrderCommandSubmissionStore _submissionStore = submissionStore;
+    private readonly IOrderRepository _orderRepository = orderRepository;
 
     public async Task<OrderResponse> SubmitOrderAsync(
         CreateOrderRequest request,
@@ -32,15 +25,10 @@ public sealed class OrderSubmissionService
         IReadOnlyDictionary<string, string?>? additionalAttributes = null,
         CancellationToken cancellationToken = default)
     {
-        var tradeIntent = await _tradeIntentRepository.GetTradeIntentAsync(request.TradeIntentId, cancellationToken);
-        if (tradeIntent is null)
-        {
-            throw new KeyNotFoundException($"Trade intent '{request.TradeIntentId}' was not found.");
-        }
-
-        var order = new Order(tradeIntent);
-        var clientOrderId = WeatherQuantCommandMapper.ResolveClientOrderId(order);
-        var commandEvent = WeatherQuantCommandMapper.CreateOrderEvent(order, correlationId, idempotencyKey, clientOrderId, additionalAttributes);
+        Domain.TradeIntents.TradeIntent? tradeIntent = await _tradeIntentRepository.GetTradeIntentAsync(request.TradeIntentId, cancellationToken) ?? throw new KeyNotFoundException($"Trade intent '{request.TradeIntentId}' was not found.");
+        Order order = new(tradeIntent);
+        string clientOrderId = WeatherQuantCommandMapper.ResolveClientOrderId(order);
+        Events.ApplicationEventEnvelope commandEvent = WeatherQuantCommandMapper.CreateOrderEvent(order, correlationId, idempotencyKey, clientOrderId, additionalAttributes);
         order.MarkCommandQueued(commandEvent.Id, clientOrderId, commandEvent.OccurredAt);
 
         PositionSnapshot? initialPositionSnapshot = null;

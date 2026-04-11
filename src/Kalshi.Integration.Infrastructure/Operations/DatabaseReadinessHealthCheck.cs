@@ -9,7 +9,12 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Reports health for database readiness.
 /// </summary>
-public sealed class DatabaseReadinessHealthCheck : IHealthCheck
+/// <remarks>
+/// Initializes a new instance of the <see cref="DatabaseReadinessHealthCheck"/> class.
+/// </remarks>
+/// <param name="dbContext">The database context used to test connectivity.</param>
+/// <param name="logger">The logger for dependency-check telemetry.</param>
+public sealed class DatabaseReadinessHealthCheck(KalshiIntegrationDbContext dbContext, ILogger<DatabaseReadinessHealthCheck> logger) : IHealthCheck
 {
     private static readonly Action<ILogger, string, string, bool, double, Exception?> DependencyCheckCompleted =
         LoggerMessage.Define<string, string, bool, double>(
@@ -23,28 +28,17 @@ public sealed class DatabaseReadinessHealthCheck : IHealthCheck
             new EventId(1001, nameof(DependencyCheckFailed)),
             "Dependency check {Dependency} {Operation} failed after {ElapsedMs} ms.");
 
-    private readonly KalshiIntegrationDbContext _dbContext;
-    private readonly ILogger<DatabaseReadinessHealthCheck> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DatabaseReadinessHealthCheck"/> class.
-    /// </summary>
-    /// <param name="dbContext">The database context used to test connectivity.</param>
-    /// <param name="logger">The logger for dependency-check telemetry.</param>
-    public DatabaseReadinessHealthCheck(KalshiIntegrationDbContext dbContext, ILogger<DatabaseReadinessHealthCheck> logger)
-    {
-        _dbContext = dbContext;
-        _logger = logger;
-    }
+    private readonly KalshiIntegrationDbContext _dbContext = dbContext;
+    private readonly ILogger<DatabaseReadinessHealthCheck> _logger = logger;
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var dependencyName = DatabaseProviders.GetDependencyName(_dbContext.Database.ProviderName);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        string dependencyName = DatabaseProviders.GetDependencyName(_dbContext.Database.ProviderName);
 
         try
         {
-            var canConnect = await _dbContext.Database.CanConnectAsync(cancellationToken);
+            bool canConnect = await _dbContext.Database.CanConnectAsync(cancellationToken);
             stopwatch.Stop();
 
             DependencyCheckCompleted(

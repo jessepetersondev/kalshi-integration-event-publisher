@@ -1,38 +1,32 @@
 using Kalshi.Integration.Executor.Persistence;
+using Kalshi.Integration.Infrastructure.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
-using Kalshi.Integration.Infrastructure.Messaging;
 
 namespace Kalshi.Integration.Executor.Health;
 
 /// <summary>
 /// Reports executor outbox health based on pending age and retry exhaustion state.
 /// </summary>
-public sealed class ExecutorOutboxHealthCheck : IHealthCheck
+public sealed class ExecutorOutboxHealthCheck(
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<RabbitMqOptions> options) : IHealthCheck
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqOptions _options;
-
-    public ExecutorOutboxHealthCheck(
-        IServiceScopeFactory serviceScopeFactory,
-        IOptions<RabbitMqOptions> options)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _options = options.Value;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqOptions _options = options.Value;
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        using var scope = _serviceScopeFactory.CreateScope();
-        var healthService = scope.ServiceProvider.GetRequiredService<ExecutorOutboxHealthService>();
-        var now = DateTimeOffset.UtcNow;
-        var snapshot = await healthService.GetSnapshotAsync(now, cancellationToken);
-        var oldestPendingAge = snapshot.OldestPendingCreatedAt.HasValue
+        using IServiceScope scope = _serviceScopeFactory.CreateScope();
+        ExecutorOutboxHealthService healthService = scope.ServiceProvider.GetRequiredService<ExecutorOutboxHealthService>();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Contracts.Reliability.OutboxHealthSnapshot snapshot = await healthService.GetSnapshotAsync(now, cancellationToken);
+        TimeSpan oldestPendingAge = snapshot.OldestPendingCreatedAt.HasValue
             ? now - snapshot.OldestPendingCreatedAt.Value
             : TimeSpan.Zero;
 
-        var data = new Dictionary<string, object>
+        Dictionary<string, object> data = new()
         {
             ["pendingCount"] = snapshot.PendingCount,
             ["manualInterventionCount"] = snapshot.ManualInterventionCount,

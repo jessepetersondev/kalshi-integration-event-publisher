@@ -6,21 +6,15 @@ namespace Kalshi.Integration.Api.Infrastructure;
 /// <summary>
 /// Applies request timing concerns to the ASP.NET Core request pipeline.
 /// </summary>
-public sealed class RequestTimingMiddleware
+/// <remarks>
+/// Initializes a new instance of the <see cref="RequestTimingMiddleware"/> class.
+/// </remarks>
+/// <param name="next">The next middleware in the request pipeline.</param>
+/// <param name="logger">The logger used for request completion and failure events.</param>
+public sealed class RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<RequestTimingMiddleware> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RequestTimingMiddleware"/> class.
-    /// </summary>
-    /// <param name="next">The next middleware in the request pipeline.</param>
-    /// <param name="logger">The logger used for request completion and failure events.</param>
-    public RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
+    private readonly RequestDelegate _next = next;
+    private readonly ILogger<RequestTimingMiddleware> _logger = logger;
 
     /// <summary>
     /// Measures the current request, records HTTP telemetry, and logs success or failure details.
@@ -28,9 +22,9 @@ public sealed class RequestTimingMiddleware
     /// <param name="httpContext">The HTTP context for the current request.</param>
     public async Task InvokeAsync(HttpContext httpContext)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var request = httpContext.Request;
-        var correlationId = httpContext.Request.Headers.TryGetValue(RequestMetadata.CorrelationIdHeaderName, out var headerValue)
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        HttpRequest request = httpContext.Request;
+        string correlationId = httpContext.Request.Headers.TryGetValue(RequestMetadata.CorrelationIdHeaderName, out Microsoft.Extensions.Primitives.StringValues headerValue)
             ? headerValue.ToString()
             : httpContext.TraceIdentifier;
 
@@ -39,8 +33,8 @@ public sealed class RequestTimingMiddleware
             await _next(httpContext);
             stopwatch.Stop();
 
-            var path = request.Path.Value ?? "/";
-            var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
+            string path = request.Path.Value ?? "/";
+            double elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
             KalshiTelemetry.HttpServerRequestDurationMs.Record(
                 elapsedMs,
@@ -61,8 +55,8 @@ public sealed class RequestTimingMiddleware
         {
             stopwatch.Stop();
 
-            var path = request.Path.Value ?? "/";
-            var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
+            string path = request.Path.Value ?? "/";
+            double elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
             KalshiTelemetry.HttpServerRequestDurationMs.Record(
                 elapsedMs,

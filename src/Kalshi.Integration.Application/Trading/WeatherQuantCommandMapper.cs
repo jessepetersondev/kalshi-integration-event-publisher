@@ -60,7 +60,7 @@ public static class WeatherQuantCommandMapper
         string clientOrderId,
         IReadOnlyDictionary<string, string?>? additionalAttributes = null)
     {
-        var attributes = BuildCommonAttributes(
+        Dictionary<string, string?> attributes = BuildCommonAttributes(
             order.TradeIntent.ActionType.ToString().ToLowerInvariant(),
             order.TradeIntent.Ticker,
             order.TradeIntent.Side?.ToString().ToLowerInvariant(),
@@ -81,7 +81,7 @@ public static class WeatherQuantCommandMapper
 
         if (additionalAttributes is not null)
         {
-            foreach (var attribute in additionalAttributes)
+            foreach (KeyValuePair<string, string?> attribute in additionalAttributes)
             {
                 attributes[attribute.Key] = attribute.Value;
             }

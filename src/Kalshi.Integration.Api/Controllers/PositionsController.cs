@@ -9,21 +9,16 @@ namespace Kalshi.Integration.Api.Controllers;
 /// <summary>
 /// Returns operator-facing position snapshots derived from execution state.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="PositionsController"/> class.
+/// </remarks>
+/// <param name="tradingQueryService">The service that reads position projections.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/positions")]
-public sealed class PositionsController : ControllerBase
+public sealed class PositionsController(TradingQueryService tradingQueryService) : ControllerBase
 {
-    private readonly TradingQueryService _tradingQueryService;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PositionsController"/> class.
-    /// </summary>
-    /// <param name="tradingQueryService">The service that reads position projections.</param>
-    public PositionsController(TradingQueryService tradingQueryService)
-    {
-        _tradingQueryService = tradingQueryService;
-    }
+    private readonly TradingQueryService _tradingQueryService = tradingQueryService;
 
     /// <summary>
     /// Returns the latest position snapshot for each tracked ticker and side.
@@ -35,7 +30,7 @@ public sealed class PositionsController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<PositionResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
-        var positions = await _tradingQueryService.GetPositionsAsync(cancellationToken);
+        IReadOnlyList<PositionResponse> positions = await _tradingQueryService.GetPositionsAsync(cancellationToken);
         return Ok(positions);
     }
 }

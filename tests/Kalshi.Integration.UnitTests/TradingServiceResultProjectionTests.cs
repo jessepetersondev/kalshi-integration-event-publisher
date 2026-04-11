@@ -15,15 +15,15 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task MarkOrderPublishLifecycleMethods_ShouldUpdateOrderAndRecordLifecycleStages()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout", "corr-1");
-        var order = new Order(tradeIntent);
-        var attemptedAt = new DateTimeOffset(2026, 4, 4, 11, 0, 0, TimeSpan.Zero);
-        var confirmedAt = attemptedAt.AddMinutes(1);
-        var reviewAt = attemptedAt.AddMinutes(2);
-        var firstCommandEventId = Guid.NewGuid();
-        var secondCommandEventId = Guid.NewGuid();
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout", "corr-1");
+        Order order = new(tradeIntent);
+        DateTimeOffset attemptedAt = new(2026, 4, 4, 11, 0, 0, TimeSpan.Zero);
+        DateTimeOffset confirmedAt = attemptedAt.AddMinutes(1);
+        DateTimeOffset reviewAt = attemptedAt.AddMinutes(2);
+        Guid firstCommandEventId = Guid.NewGuid();
+        Guid secondCommandEventId = Guid.NewGuid();
 
         await repository.AddTradeIntentAsync(tradeIntent);
         await repository.AddOrderAsync(order);
@@ -32,8 +32,8 @@ public sealed class TradingServiceResultProjectionTests
         await service.MarkOrderPublishConfirmedAsync(order.Id, firstCommandEventId, confirmedAt);
         await service.MarkOrderManualInterventionRequiredAsync(order.Id, " awaiting broker confirm ", secondCommandEventId, reviewAt);
 
-        var persistedOrder = await repository.GetOrderAsync(order.Id);
-        var lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
+        Order? persistedOrder = await repository.GetOrderAsync(order.Id);
+        IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)> lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
 
         Assert.NotNull(persistedOrder);
         Assert.Equal(OrderPublishStatus.ManualInterventionRequired, persistedOrder!.PublishStatus);
@@ -58,13 +58,13 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldProjectAcceptedResultAndPositionSnapshot()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 3, 0.45m, "Breakout", "corr-2");
-        var order = new Order(tradeIntent);
-        var commandEventId = Guid.NewGuid();
-        var occurredAt = new DateTimeOffset(2026, 4, 4, 11, 5, 0, TimeSpan.Zero);
-        var resultEvent = new ApplicationEventEnvelope(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.Yes, 3, 0.45m, "Breakout", "corr-2");
+        Order order = new(tradeIntent);
+        Guid commandEventId = Guid.NewGuid();
+        DateTimeOffset occurredAt = new(2026, 4, 4, 11, 5, 0, TimeSpan.Zero);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "trading",
             "order.execution_succeeded",
@@ -85,12 +85,12 @@ public sealed class TradingServiceResultProjectionTests
         order.TransitionTo(OrderStatus.Accepted, 0, occurredAt.AddSeconds(-30));
         await repository.AddOrderAsync(order);
 
-        var applied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool applied = await service.ApplyExecutorResultAsync(resultEvent);
 
-        var persistedOrder = await repository.GetOrderAsync(order.Id);
-        var executionEvents = await repository.GetOrderEventsAsync(order.Id);
-        var lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
-        var positions = await repository.GetPositionsAsync();
+        Order? persistedOrder = await repository.GetOrderAsync(order.Id);
+        IReadOnlyList<Domain.Executions.ExecutionEvent> executionEvents = await repository.GetOrderEventsAsync(order.Id);
+        IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)> lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
+        IReadOnlyList<PositionSnapshot> positions = await repository.GetPositionsAsync();
 
         Assert.True(applied);
         Assert.NotNull(persistedOrder);
@@ -100,11 +100,11 @@ public sealed class TradingServiceResultProjectionTests
         Assert.Equal("external-1", persistedOrder.ExternalOrderId);
         Assert.Equal("client-1", persistedOrder.ClientOrderId);
         Assert.Equal(commandEventId, persistedOrder.CommandEventId);
-        var executionEvent = Assert.Single(executionEvents);
+        Domain.Executions.ExecutionEvent executionEvent = Assert.Single(executionEvents);
         Assert.Equal(OrderStatus.Resting, executionEvent.Status);
-        var lifecycleEvent = Assert.Single(lifecycleEvents);
-        Assert.Equal("order.execution_succeeded", lifecycleEvent.Stage);
-        var position = Assert.Single(positions);
+        (string Stage, _, _) = Assert.Single(lifecycleEvents);
+        Assert.Equal("order.execution_succeeded", Stage);
+        PositionSnapshot position = Assert.Single(positions);
         Assert.Equal("KXBTC", position.Ticker);
         Assert.Equal(TradeSide.Yes, position.Side);
         Assert.Equal(1, position.Contracts);
@@ -113,9 +113,9 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldMapCancelSuccessWithoutExplicitOrderStatus()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new(
             "KXBTC",
             null,
             null,
@@ -127,8 +127,8 @@ public sealed class TradingServiceResultProjectionTests
             "weather-quant-command.v1",
             targetPublisherOrderId: Guid.NewGuid(),
             correlationId: "corr-3");
-        var order = new Order(tradeIntent);
-        var resultEvent = new ApplicationEventEnvelope(
+        Order order = new(tradeIntent);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "trading",
             "order.execution_succeeded",
@@ -141,9 +141,9 @@ public sealed class TradingServiceResultProjectionTests
         await repository.AddTradeIntentAsync(tradeIntent);
         await repository.AddOrderAsync(order);
 
-        var applied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool applied = await service.ApplyExecutorResultAsync(resultEvent);
 
-        var persistedOrder = await repository.GetOrderAsync(order.Id);
+        Order? persistedOrder = await repository.GetOrderAsync(order.Id);
         Assert.True(applied);
         Assert.NotNull(persistedOrder);
         Assert.Equal(OrderStatus.Canceled, persistedOrder!.CurrentStatus);
@@ -152,11 +152,11 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldMapExecutedStatusToFilledAndInferFullQuantity()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent("KXWEATHER", TradeSide.Yes, 1, 0.10m, "Manual", "corr-executed");
-        var order = new Order(tradeIntent);
-        var resultEvent = new ApplicationEventEnvelope(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new("KXWEATHER", TradeSide.Yes, 1, 0.10m, "Manual", "corr-executed");
+        Order order = new(tradeIntent);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "executor",
             "order.execution_succeeded",
@@ -175,10 +175,10 @@ public sealed class TradingServiceResultProjectionTests
         order.TransitionTo(OrderStatus.Accepted, 0, DateTimeOffset.UtcNow.AddSeconds(-30));
         await repository.AddOrderAsync(order);
 
-        var applied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool applied = await service.ApplyExecutorResultAsync(resultEvent);
 
-        var persistedOrder = await repository.GetOrderAsync(order.Id);
-        var positions = await repository.GetPositionsAsync();
+        Order? persistedOrder = await repository.GetOrderAsync(order.Id);
+        IReadOnlyList<PositionSnapshot> positions = await repository.GetPositionsAsync();
 
         Assert.True(applied);
         Assert.NotNull(persistedOrder);
@@ -186,18 +186,18 @@ public sealed class TradingServiceResultProjectionTests
         Assert.Equal(1, persistedOrder.FilledQuantity);
         Assert.Equal("ext-1", persistedOrder.ExternalOrderId);
         Assert.Equal("client-1", persistedOrder.ClientOrderId);
-        var position = Assert.Single(positions);
+        PositionSnapshot position = Assert.Single(positions);
         Assert.Equal(1, position.Contracts);
     }
 
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldProjectDeadLetterReasonAsRejected()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.No, 1, 0.52m, "Fade", "corr-4");
-        var order = new Order(tradeIntent);
-        var resultEvent = new ApplicationEventEnvelope(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.No, 1, 0.52m, "Fade", "corr-4");
+        Order order = new(tradeIntent);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "trading",
             "order.dead_lettered",
@@ -214,9 +214,9 @@ public sealed class TradingServiceResultProjectionTests
         await repository.AddTradeIntentAsync(tradeIntent);
         await repository.AddOrderAsync(order);
 
-        var applied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool applied = await service.ApplyExecutorResultAsync(resultEvent);
 
-        var persistedOrder = await repository.GetOrderAsync(order.Id);
+        Order? persistedOrder = await repository.GetOrderAsync(order.Id);
         Assert.True(applied);
         Assert.NotNull(persistedOrder);
         Assert.Equal(OrderStatus.Rejected, persistedOrder!.CurrentStatus);
@@ -226,11 +226,11 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldIgnoreDuplicateResultEvents()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.40m, "Trend", "corr-5");
-        var order = new Order(tradeIntent);
-        var resultEvent = new ApplicationEventEnvelope(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.Yes, 2, 0.40m, "Trend", "corr-5");
+        Order order = new(tradeIntent);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "trading",
             "order.execution_failed",
@@ -246,11 +246,11 @@ public sealed class TradingServiceResultProjectionTests
         await repository.AddTradeIntentAsync(tradeIntent);
         await repository.AddOrderAsync(order);
 
-        var firstApplied = await service.ApplyExecutorResultAsync(resultEvent);
-        var secondApplied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool firstApplied = await service.ApplyExecutorResultAsync(resultEvent);
+        bool secondApplied = await service.ApplyExecutorResultAsync(resultEvent);
 
-        var executionEvents = await repository.GetOrderEventsAsync(order.Id);
-        var lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
+        IReadOnlyList<Domain.Executions.ExecutionEvent> executionEvents = await repository.GetOrderEventsAsync(order.Id);
+        IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)> lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
 
         Assert.True(firstApplied);
         Assert.False(secondApplied);
@@ -261,9 +261,9 @@ public sealed class TradingServiceResultProjectionTests
     [Fact]
     public async Task ApplyExecutorResultAsync_ShouldRejectMissingPublisherOrderIdentity()
     {
-        var repository = new InMemoryTradingRepository();
-        var service = CreateService(repository);
-        var resultEvent = new ApplicationEventEnvelope(
+        InMemoryTradingRepository repository = new();
+        TradingService service = CreateService(repository);
+        ApplicationEventEnvelope resultEvent = new(
             Guid.NewGuid(),
             "trading",
             "order.execution_failed",
@@ -273,14 +273,14 @@ public sealed class TradingServiceResultProjectionTests
             new Dictionary<string, string?>(),
             DateTimeOffset.UtcNow);
 
-        var exception = await Assert.ThrowsAsync<DomainException>(() => service.ApplyExecutorResultAsync(resultEvent));
+        DomainException exception = await Assert.ThrowsAsync<DomainException>(() => service.ApplyExecutorResultAsync(resultEvent));
 
         Assert.Contains("publisher order identity", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static TradingService CreateService(InMemoryTradingRepository repository, int maxOrderSize = 10)
     {
-        var riskEvaluator = new RiskEvaluator(repository, Options.Create(new RiskOptions { MaxOrderSize = maxOrderSize }));
+        RiskEvaluator riskEvaluator = new(repository, Options.Create(new RiskOptions { MaxOrderSize = maxOrderSize }));
         return new TradingService(repository, repository, repository, riskEvaluator);
     }
 }

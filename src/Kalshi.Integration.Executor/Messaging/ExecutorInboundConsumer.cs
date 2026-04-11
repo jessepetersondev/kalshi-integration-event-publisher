@@ -14,29 +14,20 @@ using RabbitMQ.Client.Events;
 
 namespace Kalshi.Integration.Executor.Messaging;
 
-public sealed class ExecutorInboundConsumer : BackgroundService
+public sealed class ExecutorInboundConsumer(
+    IConnectionFactory connectionFactory,
+    IServiceScopeFactory serviceScopeFactory,
+    RabbitMqTopologyBootstrapper topologyBootstrapper,
+    IOptions<RabbitMqOptions> options,
+    ILogger<ExecutorInboundConsumer> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IConnectionFactory _connectionFactory;
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper;
-    private readonly IOptions<RabbitMqOptions> _options;
-    private readonly ILogger<ExecutorInboundConsumer> _logger;
-
-    public ExecutorInboundConsumer(
-        IConnectionFactory connectionFactory,
-        IServiceScopeFactory serviceScopeFactory,
-        RabbitMqTopologyBootstrapper topologyBootstrapper,
-        IOptions<RabbitMqOptions> options,
-        ILogger<ExecutorInboundConsumer> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _serviceScopeFactory = serviceScopeFactory;
-        _topologyBootstrapper = topologyBootstrapper;
-        _options = options;
-        _logger = logger;
-    }
+    private readonly IConnectionFactory _connectionFactory = connectionFactory;
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper = topologyBootstrapper;
+    private readonly IOptions<RabbitMqOptions> _options = options;
+    private readonly ILogger<ExecutorInboundConsumer> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -44,26 +35,26 @@ public sealed class ExecutorInboundConsumer : BackgroundService
         {
             try
             {
-                using var connection = _connectionFactory.CreateConnection($"{_options.Value.ClientProvidedName}.consumer");
-                using var channel = connection.CreateModel();
+                using IConnection connection = _connectionFactory.CreateConnection($"{_options.Value.ClientProvidedName}.consumer");
+                using IModel channel = connection.CreateModel();
 
                 _topologyBootstrapper.EnsureTopology(channel);
                 channel.BasicQos(0, 1, false);
 
-                var consumer = new AsyncEventingBasicConsumer(channel);
+                AsyncEventingBasicConsumer consumer = new(channel);
                 consumer.Received += async (_, args) =>
                 {
-                    var payload = Encoding.UTF8.GetString(args.Body.ToArray());
+                    string payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
                     try
                     {
-                        var envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(payload, SerializerOptions)
+                        ApplicationEventEnvelope envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(payload, SerializerOptions)
                             ?? throw new InvalidOperationException("Inbound executor payload could not be deserialized.");
 
-                        using var scope = _serviceScopeFactory.CreateScope();
+                        using IServiceScope scope = _serviceScopeFactory.CreateScope();
                         if (string.Equals(envelope.Name, "order.created", StringComparison.OrdinalIgnoreCase))
                         {
-                            var handler = scope.ServiceProvider.GetRequiredService<OrderCreatedHandler>();
+                            OrderCreatedHandler handler = scope.ServiceProvider.GetRequiredService<OrderCreatedHandler>();
                             await handler.HandleAsync(envelope, stoppingToken);
                             channel.BasicAck(args.DeliveryTag, false);
                             return;
@@ -92,8 +83,8 @@ public sealed class ExecutorInboundConsumer : BackgroundService
                     1,
                     new KeyValuePair<string, object?>("component", "executor"));
 
-                using var scope = _serviceScopeFactory.CreateScope();
-                var issueRecorder = scope.ServiceProvider.GetRequiredService<ExecutorOperationalIssueRecorder>();
+                using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                ExecutorOperationalIssueRecorder issueRecorder = scope.ServiceProvider.GetRequiredService<ExecutorOperationalIssueRecorder>();
                 await issueRecorder.AddAsync(
                     "reliability",
                     "error",

@@ -19,12 +19,12 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task MarketAndPortfolioQueries_ShouldDelegateToKalshiClient()
     {
-        var (bridge, _, _, _, apiClient, _) = CreateBridge(subaccount: 17);
-        var seriesPayload = JsonNode.Parse("""{"series":[{"ticker":"KXBTC"}]}""")!;
-        var marketsPayload = JsonNode.Parse("""{"markets":[{"ticker":"KXBTC-BTC-25APR09"}]}""")!;
-        var marketPayload = JsonNode.Parse("""{"market":{"ticker":"KXBTC-BTC-25APR09"}}""")!;
-        var balancePayload = JsonNode.Parse("""{"balance":12345}""")!;
-        var positionsPayload = JsonNode.Parse("""{"market_positions":[{"ticker":"KXBTC-BTC-25APR09"}]}""")!;
+        (KalshiBridgeService bridge, InMemoryTradingRepository _, TradingQueryService _, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher _) = CreateBridge(subaccount: 17);
+        JsonNode seriesPayload = JsonNode.Parse("""{"series":[{"ticker":"KXBTC"}]}""")!;
+        JsonNode marketsPayload = JsonNode.Parse("""{"markets":[{"ticker":"KXBTC-BTC-25APR09"}]}""")!;
+        JsonNode marketPayload = JsonNode.Parse("""{"market":{"ticker":"KXBTC-BTC-25APR09"}}""")!;
+        JsonNode balancePayload = JsonNode.Parse("""{"balance":12345}""")!;
+        JsonNode positionsPayload = JsonNode.Parse("""{"market_positions":[{"ticker":"KXBTC-BTC-25APR09"}]}""")!;
 
         apiClient
             .Setup(x => x.GetSeriesAsync("crypto", It.Is<IReadOnlyList<string>>(tags => tags.SequenceEqual(new[] { "bitcoin", "usd" })), It.IsAny<CancellationToken>()))
@@ -53,9 +53,9 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task PlaceOrderAsync_ShouldPublishOrderCommandAndReturnBridgeEnvelope()
     {
-        var (bridge, repository, queryService, _, apiClient, publisher) = CreateBridge(subaccount: 17);
+        (KalshiBridgeService bridge, InMemoryTradingRepository repository, TradingQueryService queryService, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher publisher) = CreateBridge(subaccount: 17);
 
-        var result = await bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
+        JsonNode result = await bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
             "KXBTC",
             "client-1",
             "yes",
@@ -75,8 +75,8 @@ public sealed class KalshiBridgeServiceTests
             "kalshi-btc-quant.bridge.v1",
             "client-1"));
 
-        var orderNode = Assert.IsType<JsonObject>(result["order"]);
-        var publisherOrderId = Guid.Parse(orderNode["order_id"]!.GetValue<string>());
+        JsonObject orderNode = Assert.IsType<JsonObject>(result["order"]);
+        Guid publisherOrderId = Guid.Parse(orderNode["order_id"]!.GetValue<string>());
         Assert.Equal(publisherOrderId.ToString(), orderNode["publisher_order_id"]!.GetValue<string>());
         Assert.Equal("client-1", orderNode["client_order_id"]!.GetValue<string>());
         Assert.Null(orderNode["external_order_id"]);
@@ -86,21 +86,21 @@ public sealed class KalshiBridgeServiceTests
         Assert.Equal(2, orderNode["remaining_count_fp"]!.GetValue<int>());
         Assert.Equal(0.4523m, orderNode["yes_price_dollars"]!.GetValue<decimal>());
 
-        var order = await queryService.GetOrderAsync(publisherOrderId);
+        Contracts.Orders.OrderResponse? order = await queryService.GetOrderAsync(publisherOrderId);
         Assert.NotNull(order);
         Assert.Equal("pending", order!.Status);
         Assert.Equal("publishconfirmed", order.PublishStatus);
         Assert.Null(order.ExternalOrderId);
         Assert.Equal("client-1", order.ClientOrderId);
 
-        var tradeIntent = await repository.GetTradeIntentByCorrelationIdAsync("client-1");
+        Domain.TradeIntents.TradeIntent? tradeIntent = await repository.GetTradeIntentByCorrelationIdAsync("client-1");
         Assert.NotNull(tradeIntent);
         Assert.Equal("Breakout", tradeIntent!.StrategyName);
         Assert.Equal("kalshi-btc-quant", tradeIntent.OriginService);
         Assert.Equal("Momentum breakout", tradeIntent.DecisionReason);
 
-        var publishedEvents = publisher.GetPublishedEvents();
-        var publishedEvent = Assert.Single(publishedEvents);
+        IReadOnlyList<ApplicationEventEnvelope> publishedEvents = publisher.GetPublishedEvents();
+        ApplicationEventEnvelope publishedEvent = Assert.Single(publishedEvents);
         Assert.Equal("order.created", publishedEvent.Name);
         Assert.Equal(publisherOrderId.ToString(), publishedEvent.ResourceId);
         Assert.Equal("client-1", publishedEvent.CorrelationId);
@@ -118,16 +118,16 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task PlaceOrderAsync_ShouldScheduleRetryWhenPublishConfirmationFails()
     {
-        var publisher = new Mock<IApplicationEventPublisher>(MockBehavior.Strict);
+        Mock<IApplicationEventPublisher> publisher = new(MockBehavior.Strict);
         publisher
             .Setup(x => x.PublishAsync(It.IsAny<ApplicationEventEnvelope>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PublishConfirmationException("publisher unavailable"));
 
-        var (bridge, _, queryService, _, apiClient, _) = CreateBridge(applicationEventPublisher: publisher.Object);
+        (KalshiBridgeService bridge, InMemoryTradingRepository _, TradingQueryService queryService, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher _) = CreateBridge(applicationEventPublisher: publisher.Object);
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
-        var order = await queryService.GetOrderAsync(publisherOrderId);
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        Contracts.Orders.OrderResponse? order = await queryService.GetOrderAsync(publisherOrderId);
 
         Assert.NotNull(order);
         Assert.Equal("pending", order!.Status);
@@ -140,12 +140,12 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task GetOrderAsync_ShouldReflectExecutorUpdatesWithoutCallingKalshi()
     {
-        var (bridge, _, queryService, tradingService, apiClient, _) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository _, TradingQueryService queryService, TradingService tradingService, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher _) = CreateBridge();
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
-        var applied = await tradingService.ApplyExecutorResultAsync(
+        bool applied = await tradingService.ApplyExecutorResultAsync(
             ApplicationEventEnvelope.Create(
                 category: "execution",
                 name: "order.execution_succeeded",
@@ -161,15 +161,15 @@ public sealed class KalshiBridgeServiceTests
                 }));
 
         Assert.True(applied);
-        var refreshed = await bridge.GetOrderAsync(publisherOrderId);
+        JsonNode refreshed = await bridge.GetOrderAsync(publisherOrderId);
 
-        var refreshedOrderNode = Assert.IsType<JsonObject>(refreshed["order"]);
+        JsonObject refreshedOrderNode = Assert.IsType<JsonObject>(refreshed["order"]);
         Assert.Equal("filled", refreshedOrderNode["status"]!.GetValue<string>());
         Assert.Equal(2, refreshedOrderNode["fill_count_fp"]!.GetValue<int>());
         Assert.Equal(0, refreshedOrderNode["remaining_count_fp"]!.GetValue<int>());
         Assert.Equal("ext-1", refreshedOrderNode["external_order_id"]!.GetValue<string>());
 
-        var order = await queryService.GetOrderAsync(publisherOrderId);
+        Contracts.Orders.OrderResponse? order = await queryService.GetOrderAsync(publisherOrderId);
         Assert.NotNull(order);
         Assert.Equal("filled", order!.Status);
         Assert.Equal(2, order.FilledQuantity);
@@ -179,9 +179,9 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task CancelOrderAsync_ShouldReturnExistingTerminalOrderWithoutCallingKalshi()
     {
-        var (bridge, _, queryService, tradingService, apiClient, publisher) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository _, TradingQueryService queryService, TradingService tradingService, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher publisher) = CreateBridge();
 
-        var created = await bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
+        JsonNode created = await bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
             "KXBTC",
             "client-2",
             "no",
@@ -200,9 +200,9 @@ public sealed class KalshiBridgeServiceTests
             "Take profit",
             "kalshi-btc-quant.bridge.v1",
             "client-2"));
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
-        var applied = await tradingService.ApplyExecutorResultAsync(
+        bool applied = await tradingService.ApplyExecutorResultAsync(
             ApplicationEventEnvelope.Create(
                 category: "execution",
                 name: "order.execution_succeeded",
@@ -216,14 +216,14 @@ public sealed class KalshiBridgeServiceTests
                 }));
         Assert.True(applied);
 
-        var canceled = await bridge.CancelOrderAsync(publisherOrderId);
+        JsonNode canceled = await bridge.CancelOrderAsync(publisherOrderId);
 
-        var canceledOrderNode = Assert.IsType<JsonObject>(canceled["order"]);
+        JsonObject canceledOrderNode = Assert.IsType<JsonObject>(canceled["order"]);
         Assert.Equal("filled", canceledOrderNode["status"]!.GetValue<string>());
         Assert.Equal("sell", canceledOrderNode["action"]!.GetValue<string>());
         Assert.Equal("no", canceledOrderNode["side"]!.GetValue<string>());
 
-        var order = await queryService.GetOrderAsync(publisherOrderId);
+        Contracts.Orders.OrderResponse? order = await queryService.GetOrderAsync(publisherOrderId);
         Assert.NotNull(order);
         Assert.Equal("filled", order!.Status);
         Assert.Single(publisher.GetPublishedEvents());
@@ -233,21 +233,21 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task CancelOrderAsync_ShouldPublishCancelCommandAndReturnCanceledBridgeEnvelope()
     {
-        var (bridge, _, _, _, apiClient, publisher) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository _, TradingQueryService _, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher publisher) = CreateBridge();
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
-        var canceled = await bridge.CancelOrderAsync(publisherOrderId);
+        JsonNode canceled = await bridge.CancelOrderAsync(publisherOrderId);
 
-        var canceledOrderNode = Assert.IsType<JsonObject>(canceled["order"]);
+        JsonObject canceledOrderNode = Assert.IsType<JsonObject>(canceled["order"]);
         Assert.Equal(publisherOrderId.ToString(), canceledOrderNode["order_id"]!.GetValue<string>());
         Assert.Equal("canceled", canceledOrderNode["status"]!.GetValue<string>());
 
-        var publishedEvents = publisher.GetPublishedEvents();
+        IReadOnlyList<ApplicationEventEnvelope> publishedEvents = publisher.GetPublishedEvents();
         Assert.Equal(2, publishedEvents.Count);
 
-        var cancelEvent = publishedEvents[1];
+        ApplicationEventEnvelope cancelEvent = publishedEvents[1];
         Assert.Equal("order.created", cancelEvent.Name);
         Assert.Equal("cancel", cancelEvent.Attributes["actionType"]);
         Assert.Equal(publisherOrderId.ToString(), cancelEvent.Attributes["targetPublisherOrderId"]);
@@ -258,26 +258,26 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task CancelOrderAsync_ShouldReuseCancelOrderWhenPublishConfirmationIsRetryScheduled()
     {
-        var publisher = new Mock<IApplicationEventPublisher>(MockBehavior.Strict);
+        Mock<IApplicationEventPublisher> publisher = new(MockBehavior.Strict);
         publisher
             .SetupSequence(x => x.PublishAsync(It.IsAny<ApplicationEventEnvelope>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask)
             .ThrowsAsync(new PublishConfirmationException("broker confirmation pending"));
 
-        var (bridge, repository, queryService, _, apiClient, _) = CreateBridge(applicationEventPublisher: publisher.Object);
+        (KalshiBridgeService bridge, InMemoryTradingRepository repository, TradingQueryService queryService, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher _) = CreateBridge(applicationEventPublisher: publisher.Object);
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
         await bridge.CancelOrderAsync(publisherOrderId);
         await bridge.CancelOrderAsync(publisherOrderId);
 
-        var cancelOrders = (await repository.GetOrdersAsync())
+        Domain.Orders.Order[] cancelOrders = (await repository.GetOrdersAsync())
             .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel)
             .ToArray();
 
-        var cancelOrder = Assert.Single(cancelOrders);
-        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+        Domain.Orders.Order cancelOrder = Assert.Single(cancelOrders);
+        Contracts.Orders.OrderResponse? cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
 
         Assert.NotNull(cancelProjection);
         Assert.Equal("retryscheduled", cancelProjection!.PublishStatus);
@@ -289,17 +289,17 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task CancelOrderAsync_ShouldReuseDeadLetteredCancelOrderWithoutCreatingNewRetry()
     {
-        var (bridge, repository, queryService, tradingService, apiClient, publisher) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository repository, TradingQueryService queryService, TradingService tradingService, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher publisher) = CreateBridge();
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
         await bridge.CancelOrderAsync(publisherOrderId);
 
-        var cancelOrder = Assert.Single((await repository.GetOrdersAsync())
+        Domain.Orders.Order cancelOrder = Assert.Single((await repository.GetOrdersAsync())
             .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
 
-        var applied = await tradingService.ApplyExecutorResultAsync(
+        bool applied = await tradingService.ApplyExecutorResultAsync(
             ApplicationEventEnvelope.Create(
                 category: "execution",
                 name: "order.dead_lettered",
@@ -316,7 +316,7 @@ public sealed class KalshiBridgeServiceTests
         await bridge.CancelOrderAsync(publisherOrderId);
         await bridge.CancelOrderAsync(publisherOrderId);
 
-        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+        Contracts.Orders.OrderResponse? cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
         Assert.NotNull(cancelProjection);
         Assert.Equal("rejected", cancelProjection!.Status);
         Assert.Equal("order.dead_lettered", cancelProjection.LastResultStatus);
@@ -329,14 +329,14 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task CancelOrderAsync_ShouldReuseRejectedCancelOrderWithoutCreatingNewRetry()
     {
-        var (bridge, repository, queryService, tradingService, apiClient, publisher) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository repository, TradingQueryService queryService, TradingService tradingService, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher publisher) = CreateBridge();
 
-        var created = await bridge.PlaceOrderAsync(CreateEntryRequest());
-        var publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
+        JsonNode created = await bridge.PlaceOrderAsync(CreateEntryRequest());
+        Guid publisherOrderId = Guid.Parse(created["order"]!["order_id"]!.GetValue<string>());
 
         await bridge.CancelOrderAsync(publisherOrderId);
 
-        var cancelOrder = Assert.Single((await repository.GetOrdersAsync())
+        Domain.Orders.Order cancelOrder = Assert.Single((await repository.GetOrdersAsync())
             .Where(order => order.TradeIntent.ActionType == Domain.TradeIntents.TradeIntentActionType.Cancel));
 
         cancelOrder.TransitionTo(Domain.Orders.OrderStatus.Rejected, 0, DateTimeOffset.UtcNow);
@@ -345,7 +345,7 @@ public sealed class KalshiBridgeServiceTests
         await bridge.CancelOrderAsync(publisherOrderId);
         await bridge.CancelOrderAsync(publisherOrderId);
 
-        var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
+        Contracts.Orders.OrderResponse? cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
         Assert.NotNull(cancelProjection);
         Assert.Equal("rejected", cancelProjection!.Status);
         Assert.Null(cancelProjection.LastResultStatus);
@@ -357,9 +357,9 @@ public sealed class KalshiBridgeServiceTests
     [Fact]
     public async Task PlaceOrderAsync_ShouldRejectInvalidSideBeforeCallingKalshi()
     {
-        var (bridge, repository, _, _, apiClient, _) = CreateBridge();
+        (KalshiBridgeService bridge, InMemoryTradingRepository repository, TradingQueryService _, TradingService _, Mock<IKalshiApiClient> apiClient, InMemoryApplicationEventPublisher _) = CreateBridge();
 
-        var exception = await Assert.ThrowsAsync<DomainException>(() => bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
+        DomainException exception = await Assert.ThrowsAsync<DomainException>(() => bridge.PlaceOrderAsync(new SubmitKalshiOrderRequest(
             "KXBTC",
             "client-invalid",
             "maybe",
@@ -414,13 +414,13 @@ public sealed class KalshiBridgeServiceTests
         InMemoryApplicationEventPublisher ApplicationEventPublisher)
         CreateBridge(int subaccount = 7, int maxOrderSize = 10, IApplicationEventPublisher? applicationEventPublisher = null)
     {
-        var repository = new InMemoryTradingRepository();
-        var riskEvaluator = new RiskEvaluator(repository, Options.Create(new RiskOptions { MaxOrderSize = maxOrderSize }));
-        var tradingService = new TradingService(repository, repository, repository, riskEvaluator);
-        var queryService = new TradingQueryService(repository, repository);
-        var apiClient = new Mock<IKalshiApiClient>(MockBehavior.Strict);
-        var publisher = applicationEventPublisher as InMemoryApplicationEventPublisher ?? new InMemoryApplicationEventPublisher();
-        var bridge = new KalshiBridgeService(
+        InMemoryTradingRepository repository = new();
+        RiskEvaluator riskEvaluator = new(repository, Options.Create(new RiskOptions { MaxOrderSize = maxOrderSize }));
+        TradingService tradingService = new(repository, repository, repository, riskEvaluator);
+        TradingQueryService queryService = new(repository, repository);
+        Mock<IKalshiApiClient> apiClient = new(MockBehavior.Strict);
+        InMemoryApplicationEventPublisher publisher = applicationEventPublisher as InMemoryApplicationEventPublisher ?? new InMemoryApplicationEventPublisher();
+        KalshiBridgeService bridge = new(
             apiClient.Object,
             repository,
             repository,

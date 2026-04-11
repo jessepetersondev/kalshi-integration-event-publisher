@@ -16,8 +16,8 @@ public sealed class InMemoryApplicationEventPublisher : IApplicationEventPublish
     {
         _publishedEvents.Enqueue(applicationEvent);
 
-        var subscribers = _subscribers.Values.ToArray();
-        foreach (var subscriber in subscribers)
+        Func<ApplicationEventEnvelope, CancellationToken, Task>[] subscribers = [.. _subscribers.Values];
+        foreach (Func<ApplicationEventEnvelope, CancellationToken, Task>? subscriber in subscribers)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await subscriber(applicationEvent, cancellationToken);
@@ -26,7 +26,7 @@ public sealed class InMemoryApplicationEventPublisher : IApplicationEventPublish
 
     public IDisposable Subscribe(Func<ApplicationEventEnvelope, CancellationToken, Task> subscriber)
     {
-        var id = Guid.NewGuid();
+        Guid id = Guid.NewGuid();
         _subscribers[id] = subscriber;
         return new Subscription(_subscribers, id);
     }
@@ -42,17 +42,11 @@ public sealed class InMemoryApplicationEventPublisher : IApplicationEventPublish
         _subscribers.Clear();
     }
 
-    private sealed class Subscription : IDisposable
+    private sealed class Subscription(ConcurrentDictionary<Guid, Func<ApplicationEventEnvelope, CancellationToken, Task>> subscribers, Guid id) : IDisposable
     {
-        private readonly ConcurrentDictionary<Guid, Func<ApplicationEventEnvelope, CancellationToken, Task>> _subscribers;
-        private readonly Guid _id;
+        private readonly ConcurrentDictionary<Guid, Func<ApplicationEventEnvelope, CancellationToken, Task>> _subscribers = subscribers;
+        private readonly Guid _id = id;
         private bool _disposed;
-
-        public Subscription(ConcurrentDictionary<Guid, Func<ApplicationEventEnvelope, CancellationToken, Task>> subscribers, Guid id)
-        {
-            _subscribers = subscribers;
-            _id = id;
-        }
 
         public void Dispose()
         {

@@ -8,8 +8,8 @@ internal static class OrderResponseFactory
 {
     public static async Task<OrderResponse> CreateAsync(Order order, IOrderRepository orderRepository, CancellationToken cancellationToken)
     {
-        var events = await orderRepository.GetOrderEventsAsync(order.Id, cancellationToken);
-        var lifecycleEvents = await orderRepository.GetOrderLifecycleEventsAsync(order.Id, cancellationToken);
+        IReadOnlyList<Domain.Executions.ExecutionEvent> events = await orderRepository.GetOrderEventsAsync(order.Id, cancellationToken);
+        IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)> lifecycleEvents = await orderRepository.GetOrderLifecycleEventsAsync(order.Id, cancellationToken);
 
         return new OrderResponse(
             order.Id,

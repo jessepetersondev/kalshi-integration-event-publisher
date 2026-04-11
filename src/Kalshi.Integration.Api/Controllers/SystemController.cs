@@ -8,21 +8,16 @@ namespace Kalshi.Integration.Api.Controllers;
 /// <summary>
 /// Exposes low-level operational endpoints used for service liveness and dependency checks.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="SystemController"/> class.
+/// </remarks>
+/// <param name="nodeGatewayClient">The client used to probe the node gateway dependency.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/system")]
-public sealed class SystemController : ControllerBase
+public sealed class SystemController(INodeGatewayClient nodeGatewayClient) : ControllerBase
 {
-    private readonly INodeGatewayClient _nodeGatewayClient;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SystemController"/> class.
-    /// </summary>
-    /// <param name="nodeGatewayClient">The client used to probe the node gateway dependency.</param>
-    public SystemController(INodeGatewayClient nodeGatewayClient)
-    {
-        _nodeGatewayClient = nodeGatewayClient;
-    }
+    private readonly INodeGatewayClient _nodeGatewayClient = nodeGatewayClient;
 
     /// <summary>
     /// Returns a lightweight liveness payload for infrastructure health probes.
@@ -54,7 +49,7 @@ public sealed class SystemController : ControllerBase
     {
         try
         {
-            var result = await _nodeGatewayClient.ProbeHealthAsync(cancellationToken);
+            NodeGatewayProbeResult result = await _nodeGatewayClient.ProbeHealthAsync(cancellationToken);
             return result.Healthy
                 ? Ok(result)
                 : Problem(

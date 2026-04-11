@@ -28,14 +28,14 @@ public static class DependencyInjection
     /// <returns>The updated service collection.</returns>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var normalizedProvider = DatabaseProviders.Normalize(configuration.GetValue<string>($"{DatabaseOptions.SectionName}:Provider"));
-        var applyMigrationsOnStartup = configuration.GetValue($"{DatabaseOptions.SectionName}:ApplyMigrationsOnStartup", true);
-        var connectionString = configuration.GetConnectionString("KalshiIntegration")
+        string normalizedProvider = DatabaseProviders.Normalize(configuration.GetValue<string>($"{DatabaseOptions.SectionName}:Provider"));
+        bool applyMigrationsOnStartup = configuration.GetValue($"{DatabaseOptions.SectionName}:ApplyMigrationsOnStartup", true);
+        string? connectionString = configuration.GetConnectionString("KalshiIntegration")
             ?? (normalizedProvider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-event-publisher.db" : null);
-        var normalizedEventPublisherProvider = EventPublisherProviders.Normalize(configuration.GetValue<string>($"{EventPublisherOptions.SectionName}:Provider"));
-        var enableRabbitMqResultConsumer = configuration.GetValue($"{RabbitMqOptions.SectionName}:EnableResultConsumer", true);
-        var kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
-        var nodeGatewayOptions = configuration.GetSection(NodeGatewayOptions.SectionName).Get<NodeGatewayOptions>() ?? new NodeGatewayOptions();
+        string normalizedEventPublisherProvider = EventPublisherProviders.Normalize(configuration.GetValue<string>($"{EventPublisherOptions.SectionName}:Provider"));
+        bool enableRabbitMqResultConsumer = configuration.GetValue($"{RabbitMqOptions.SectionName}:EnableResultConsumer", true);
+        KalshiApiOptions kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
+        NodeGatewayOptions nodeGatewayOptions = configuration.GetSection(NodeGatewayOptions.SectionName).Get<NodeGatewayOptions>() ?? new NodeGatewayOptions();
 
         DatabaseProviders.EnsureConnectionString(connectionString);
 
@@ -80,7 +80,7 @@ public static class DependencyInjection
         services.AddTransient<CorrelationPropagationHandler>();
         services.AddHttpClient<IKalshiApiClient, KalshiApiClient>((serviceProvider, client) =>
             {
-                var options = serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>().Value;
+                KalshiApiOptions options = serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>().Value;
                 client.BaseAddress = new Uri($"{options.BaseUrl.TrimEnd('/')}/", UriKind.Absolute);
                 client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
             })
@@ -93,7 +93,7 @@ public static class DependencyInjection
             });
         services.AddHttpClient<INodeGatewayClient, NodeGatewayClient>((serviceProvider, client) =>
             {
-                var options = serviceProvider.GetRequiredService<IOptions<NodeGatewayOptions>>().Value;
+                NodeGatewayOptions options = serviceProvider.GetRequiredService<IOptions<NodeGatewayOptions>>().Value;
                 client.BaseAddress = new Uri(options.BaseUrl, UriKind.Absolute);
                 client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
             })
@@ -144,7 +144,7 @@ public static class DependencyInjection
             services.AddHostedService<RabbitMqResultEventConsumer>();
         }
 
-        var healthChecks = services.AddHealthChecks()
+        IHealthChecksBuilder healthChecks = services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live", "ready"])
             .AddCheck<DatabaseReadinessHealthCheck>("database", tags: ["ready"])
             .AddCheck<PublisherOutboxHealthCheck>("publisher-outbox", tags: ["ready"]);
@@ -164,7 +164,7 @@ public static class DependencyInjection
 
     private static IApplicationEventPublisher ResolveApplicationEventPublisher(IServiceProvider serviceProvider)
     {
-        var options = serviceProvider.GetRequiredService<IOptions<EventPublisherOptions>>().Value;
+        EventPublisherOptions options = serviceProvider.GetRequiredService<IOptions<EventPublisherOptions>>().Value;
         return string.Equals(options.Provider, EventPublisherProviders.RabbitMq, StringComparison.OrdinalIgnoreCase)
             ? serviceProvider.GetRequiredService<RabbitMqApplicationEventPublisher>()
             : serviceProvider.GetRequiredService<InMemoryApplicationEventPublisher>();

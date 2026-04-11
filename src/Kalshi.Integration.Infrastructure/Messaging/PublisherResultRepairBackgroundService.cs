@@ -14,23 +14,16 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// Replays persisted-but-unapplied executor result events so projection gaps close automatically
 /// after process interruption or partial failure.
 /// </summary>
-public sealed class PublisherResultRepairBackgroundService : BackgroundService
+public sealed class PublisherResultRepairBackgroundService(
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<RabbitMqOptions> options,
+    ILogger<PublisherResultRepairBackgroundService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly IOptions<RabbitMqOptions> _options;
-    private readonly ILogger<PublisherResultRepairBackgroundService> _logger;
-
-    public PublisherResultRepairBackgroundService(
-        IServiceScopeFactory serviceScopeFactory,
-        IOptions<RabbitMqOptions> options,
-        ILogger<PublisherResultRepairBackgroundService> logger)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _options = options;
-        _logger = logger;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly IOptions<RabbitMqOptions> _options = options;
+    private readonly ILogger<PublisherResultRepairBackgroundService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,22 +31,22 @@ public sealed class PublisherResultRepairBackgroundService : BackgroundService
         {
             try
             {
-                using var scope = _serviceScopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
-                var tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
+                using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                KalshiIntegrationDbContext dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+                TradingService tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
 
-                var pending = (await dbContext.ResultEvents
+                List<Persistence.Entities.ResultEventEntity> pending = (await dbContext.ResultEvents
                     .Where(x => x.AppliedAt == null)
                     .ToListAsync(stoppingToken))
                     .OrderBy(x => x.OccurredAt)
                     .Take(_options.Value.RepairBatchSize)
                     .ToList();
 
-                foreach (var resultEvent in pending)
+                foreach (Persistence.Entities.ResultEventEntity? resultEvent in pending)
                 {
                     try
                     {
-                        var envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(resultEvent.PayloadJson, SerializerOptions);
+                        ApplicationEventEnvelope? envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(resultEvent.PayloadJson, SerializerOptions);
                         if (envelope is null)
                         {
                             continue;

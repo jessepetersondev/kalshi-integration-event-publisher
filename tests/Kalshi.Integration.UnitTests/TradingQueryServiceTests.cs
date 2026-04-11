@@ -13,15 +13,15 @@ public sealed class TradingQueryServiceTests
     [Fact]
     public async Task GetOrderAsync_ShouldReturnNullWhenRepositoryMisses()
     {
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
+        Mock<IOrderRepository> orderRepository = new(MockBehavior.Strict);
+        Mock<IPositionSnapshotRepository> positionSnapshotRepository = new(MockBehavior.Strict);
         orderRepository
             .Setup(x => x.GetOrderAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Order?)null);
 
-        var service = new TradingQueryService(orderRepository.Object, positionSnapshotRepository.Object);
+        TradingQueryService service = new(orderRepository.Object, positionSnapshotRepository.Object);
 
-        var result = await service.GetOrderAsync(Guid.NewGuid());
+        Contracts.Orders.OrderResponse? result = await service.GetOrderAsync(Guid.NewGuid());
 
         Assert.Null(result);
         orderRepository.VerifyAll();
@@ -30,12 +30,12 @@ public sealed class TradingQueryServiceTests
     [Fact]
     public async Task GetOrderAsync_ShouldMapOrderAndSortEvents()
     {
-        var tradeIntent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
-        var order = new Order(tradeIntent);
-        var olderEvent = new ExecutionEvent(order.Id, OrderStatus.Accepted, 0, DateTimeOffset.UtcNow.AddMinutes(-2));
-        var newerEvent = new ExecutionEvent(order.Id, OrderStatus.PartiallyFilled, 1, DateTimeOffset.UtcNow.AddMinutes(-1));
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
+        TradeIntent tradeIntent = new("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
+        Order order = new(tradeIntent);
+        ExecutionEvent olderEvent = new(order.Id, OrderStatus.Accepted, 0, DateTimeOffset.UtcNow.AddMinutes(-2));
+        ExecutionEvent newerEvent = new(order.Id, OrderStatus.PartiallyFilled, 1, DateTimeOffset.UtcNow.AddMinutes(-1));
+        Mock<IOrderRepository> orderRepository = new(MockBehavior.Strict);
+        Mock<IPositionSnapshotRepository> positionSnapshotRepository = new(MockBehavior.Strict);
 
         orderRepository
             .Setup(x => x.GetOrderAsync(order.Id, It.IsAny<CancellationToken>()))
@@ -47,9 +47,9 @@ public sealed class TradingQueryServiceTests
             .Setup(x => x.GetOrderLifecycleEventsAsync(order.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
 
-        var service = new TradingQueryService(orderRepository.Object, positionSnapshotRepository.Object);
+        TradingQueryService service = new(orderRepository.Object, positionSnapshotRepository.Object);
 
-        var result = await service.GetOrderAsync(order.Id);
+        Contracts.Orders.OrderResponse? result = await service.GetOrderAsync(order.Id);
 
         Assert.NotNull(result);
         Assert.Equal(order.Id, result!.Id);
@@ -64,8 +64,8 @@ public sealed class TradingQueryServiceTests
     [Fact]
     public async Task GetPositionsAsync_ShouldMapRepositoryPositions()
     {
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
+        Mock<IOrderRepository> orderRepository = new(MockBehavior.Strict);
+        Mock<IPositionSnapshotRepository> positionSnapshotRepository = new(MockBehavior.Strict);
         positionSnapshotRepository
             .Setup(x => x.GetPositionsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[]
@@ -74,9 +74,9 @@ public sealed class TradingQueryServiceTests
                 new PositionSnapshot("KXBTC", TradeSide.Yes, 2, 0.45m, DateTimeOffset.UtcNow)
             });
 
-        var service = new TradingQueryService(orderRepository.Object, positionSnapshotRepository.Object);
+        TradingQueryService service = new(orderRepository.Object, positionSnapshotRepository.Object);
 
-        var result = await service.GetPositionsAsync();
+        IReadOnlyList<Contracts.Positions.PositionResponse> result = await service.GetPositionsAsync();
 
         Assert.Equal(2, result.Count);
         Assert.Equal("KXBTC", result[0].Ticker);
@@ -89,11 +89,11 @@ public sealed class TradingQueryServiceTests
     [Fact]
     public async Task GetOrderOutcomesAsync_ShouldMapAndSortExecutionOutcomes()
     {
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
-        var baseTime = new DateTimeOffset(2026, 4, 6, 14, 0, 0, TimeSpan.Zero);
+        Mock<IOrderRepository> orderRepository = new(MockBehavior.Strict);
+        Mock<IPositionSnapshotRepository> positionSnapshotRepository = new(MockBehavior.Strict);
+        DateTimeOffset baseTime = new(2026, 4, 6, 14, 0, 0, TimeSpan.Zero);
 
-        var awaitingOrder = CreateOrder(
+        Order awaitingOrder = CreateOrder(
             ticker: "KXBTC-AWAIT",
             correlationId: "corr-await",
             originService: "weather-quant",
@@ -114,7 +114,7 @@ public sealed class TradingQueryServiceTests
             createdAt: baseTime.AddMinutes(-30),
             updatedAt: baseTime.AddMinutes(-10));
 
-        var failedOrder = CreateOrder(
+        Order failedOrder = CreateOrder(
             ticker: "KXBTC-FAIL",
             correlationId: "corr-fail",
             originService: "weather-quant",
@@ -135,7 +135,7 @@ public sealed class TradingQueryServiceTests
             createdAt: baseTime.AddMinutes(-25),
             updatedAt: baseTime.AddMinutes(-2));
 
-        var succeededOrder = CreateOrder(
+        Order succeededOrder = CreateOrder(
             ticker: "KXBTC-SUCCEED",
             correlationId: "corr-success",
             originService: "executor-client",
@@ -160,9 +160,9 @@ public sealed class TradingQueryServiceTests
             .Setup(x => x.GetOrdersAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { awaitingOrder, failedOrder, succeededOrder });
 
-        var service = new TradingQueryService(orderRepository.Object, positionSnapshotRepository.Object);
+        TradingQueryService service = new(orderRepository.Object, positionSnapshotRepository.Object);
 
-        var result = await service.GetOrderOutcomesAsync(limit: 10);
+        IReadOnlyList<Contracts.Orders.OrderOutcomeResponse> result = await service.GetOrderOutcomesAsync(limit: 10);
 
         Assert.Equal(3, result.Count);
         Assert.Equal(succeededOrder.Id, result[0].Id);
@@ -185,11 +185,11 @@ public sealed class TradingQueryServiceTests
     [Fact]
     public async Task GetOrderOutcomesAsync_ShouldApplyCaseInsensitiveNormalizedFilters()
     {
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var positionSnapshotRepository = new Mock<IPositionSnapshotRepository>(MockBehavior.Strict);
-        var baseTime = new DateTimeOffset(2026, 4, 6, 15, 0, 0, TimeSpan.Zero);
+        Mock<IOrderRepository> orderRepository = new(MockBehavior.Strict);
+        Mock<IPositionSnapshotRepository> positionSnapshotRepository = new(MockBehavior.Strict);
+        DateTimeOffset baseTime = new(2026, 4, 6, 15, 0, 0, TimeSpan.Zero);
 
-        var matchingOrder = CreateOrder(
+        Order matchingOrder = CreateOrder(
             ticker: "KXBTC-MATCH",
             correlationId: "corr-match",
             originService: "weather-quant",
@@ -210,7 +210,7 @@ public sealed class TradingQueryServiceTests
             createdAt: baseTime.AddMinutes(-20),
             updatedAt: baseTime.AddMinutes(-3));
 
-        var nonMatchingOrder = CreateOrder(
+        Order nonMatchingOrder = CreateOrder(
             ticker: "KXBTC-OTHER",
             correlationId: "corr-other",
             originService: "legacy-client",
@@ -235,9 +235,9 @@ public sealed class TradingQueryServiceTests
             .Setup(x => x.GetOrdersAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { matchingOrder, nonMatchingOrder });
 
-        var service = new TradingQueryService(orderRepository.Object, positionSnapshotRepository.Object);
+        TradingQueryService service = new(orderRepository.Object, positionSnapshotRepository.Object);
 
-        var result = await service.GetOrderOutcomesAsync(
+        IReadOnlyList<Contracts.Orders.OrderOutcomeResponse> result = await service.GetOrderOutcomesAsync(
             correlationId: "CORR-MATCH",
             originService: "WEATHER-QUANT",
             status: "rejected",
@@ -246,7 +246,7 @@ public sealed class TradingQueryServiceTests
             resultStatus: "order.execution_blocked",
             limit: 10);
 
-        var outcome = Assert.Single(result);
+        Contracts.Orders.OrderOutcomeResponse outcome = Assert.Single(result);
         Assert.Equal(matchingOrder.Id, outcome.Id);
         Assert.Equal("failed", outcome.OutcomeState);
         Assert.Equal("weather-quant", outcome.OriginService);
@@ -263,7 +263,7 @@ public sealed class TradingQueryServiceTests
         TradeSide side,
         decimal limitPrice)
     {
-        var tradeIntent = new TradeIntent(
+        TradeIntent tradeIntent = new(
             ticker,
             side,
             quantity,

@@ -11,14 +11,14 @@ public sealed class KalshiIntegrationDbContextFactory : IDesignTimeDbContextFact
 {
     public KalshiIntegrationDbContext CreateDbContext(string[] args)
     {
-        var configuration = BuildConfiguration(args);
-        var provider = DatabaseProviders.Normalize(configuration.GetValue<string>($"{DatabaseOptions.SectionName}:Provider"));
-        var connectionString = configuration.GetConnectionString("KalshiIntegration")
+        IConfiguration configuration = BuildConfiguration(args);
+        string provider = DatabaseProviders.Normalize(configuration.GetValue<string>($"{DatabaseOptions.SectionName}:Provider"));
+        string? connectionString = configuration.GetConnectionString("KalshiIntegration")
             ?? (provider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-event-publisher.db" : null);
 
         DatabaseProviders.EnsureConnectionString(connectionString);
 
-        var optionsBuilder = new DbContextOptionsBuilder<KalshiIntegrationDbContext>();
+        DbContextOptionsBuilder<KalshiIntegrationDbContext> optionsBuilder = new();
         switch (provider)
         {
             case DatabaseProviders.Sqlite:
@@ -39,8 +39,8 @@ public sealed class KalshiIntegrationDbContextFactory : IDesignTimeDbContextFact
 
     private static IConfiguration BuildConfiguration(string[] args)
     {
-        var apiProjectPath = ResolveApiProjectPath();
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+        string apiProjectPath = ResolveApiProjectPath();
+        string environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
 
         return new ConfigurationBuilder()
             .SetBasePath(apiProjectPath)
@@ -53,16 +53,16 @@ public sealed class KalshiIntegrationDbContextFactory : IDesignTimeDbContextFact
 
     private static string ResolveApiProjectPath()
     {
-        var candidates = new[]
-        {
+        string[] candidates =
+        [
             Path.Combine(Directory.GetCurrentDirectory(), "src", "Kalshi.Integration.Api"),
             Path.Combine(Directory.GetCurrentDirectory(), "..", "Kalshi.Integration.Api"),
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Kalshi.Integration.Api"),
-        };
+        ];
 
-        foreach (var candidate in candidates)
+        foreach (string? candidate in candidates)
         {
-            var fullPath = Path.GetFullPath(candidate);
+            string fullPath = Path.GetFullPath(candidate);
             if (File.Exists(Path.Combine(fullPath, "appsettings.json")))
             {
                 return fullPath;

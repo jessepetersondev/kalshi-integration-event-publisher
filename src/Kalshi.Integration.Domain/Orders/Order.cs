@@ -11,14 +11,14 @@ public sealed class Order
     private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedTransitions =
         new()
         {
-            [OrderStatus.Pending] = new[] { OrderStatus.Accepted, OrderStatus.Resting, OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Rejected, OrderStatus.Canceled },
-            [OrderStatus.Accepted] = new[] { OrderStatus.Resting, OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Rejected },
-            [OrderStatus.Resting] = new[] { OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled },
-            [OrderStatus.PartiallyFilled] = new[] { OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled },
-            [OrderStatus.Filled] = new[] { OrderStatus.Settled },
-            [OrderStatus.Canceled] = Array.Empty<OrderStatus>(),
-            [OrderStatus.Rejected] = Array.Empty<OrderStatus>(),
-            [OrderStatus.Settled] = Array.Empty<OrderStatus>(),
+            [OrderStatus.Pending] = [OrderStatus.Accepted, OrderStatus.Resting, OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Rejected, OrderStatus.Canceled],
+            [OrderStatus.Accepted] = [OrderStatus.Resting, OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Rejected],
+            [OrderStatus.Resting] = [OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled],
+            [OrderStatus.PartiallyFilled] = [OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.Canceled],
+            [OrderStatus.Filled] = [OrderStatus.Settled],
+            [OrderStatus.Canceled] = [],
+            [OrderStatus.Rejected] = [],
+            [OrderStatus.Settled] = [],
         };
 
     public Order(TradeIntent tradeIntent)
@@ -52,7 +52,7 @@ public sealed class Order
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt)
     {
-        var publishStatus = currentStatus switch
+        OrderPublishStatus publishStatus = currentStatus switch
         {
             OrderStatus.Pending => OrderPublishStatus.OrderCreated,
             _ => OrderPublishStatus.PublishConfirmed,
@@ -100,7 +100,7 @@ public sealed class Order
 
     public void TransitionTo(OrderStatus nextStatus, int? filledQuantity = null, DateTimeOffset? updatedAt = null)
     {
-        if (!AllowedTransitions.TryGetValue(CurrentStatus, out var allowed) || !allowed.Contains(nextStatus))
+        if (!AllowedTransitions.TryGetValue(CurrentStatus, out OrderStatus[]? allowed) || !allowed.Contains(nextStatus))
         {
             throw new DomainException($"Invalid order status transition: {CurrentStatus} -> {nextStatus}.");
         }

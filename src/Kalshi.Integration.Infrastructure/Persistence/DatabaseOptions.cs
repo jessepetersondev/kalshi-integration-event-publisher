@@ -72,8 +72,8 @@ public static class DatabaseProviders
 
     public static string GetHealthDescription(string? efProviderName, bool canConnect)
     {
-        var provider = GetDependencyName(efProviderName);
-        var providerLabel = provider switch
+        string provider = GetDependencyName(efProviderName);
+        string providerLabel = provider switch
         {
             "sqlserver" => "SQL Server/Azure SQL",
             "sqlite" => "SQLite",

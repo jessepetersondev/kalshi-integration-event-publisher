@@ -3,13 +3,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kalshi.Integration.Executor.Persistence;
 
-public sealed class ExecutorDbContext : DbContext
+public sealed class ExecutorDbContext(DbContextOptions<ExecutorDbContext> options) : DbContext(options)
 {
-    public ExecutorDbContext(DbContextOptions<ExecutorDbContext> options)
-        : base(options)
-    {
-    }
-
     public DbSet<ExecutorInboundMessageEntity> InboundMessages => Set<ExecutorInboundMessageEntity>();
     public DbSet<ExecutionRecordEntity> ExecutionRecords => Set<ExecutionRecordEntity>();
     public DbSet<ExternalOrderMappingEntity> ExternalOrderMappings => Set<ExternalOrderMappingEntity>();

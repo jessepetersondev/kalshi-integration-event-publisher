@@ -9,19 +9,14 @@ namespace Kalshi.Integration.Infrastructure.Operations;
 /// <summary>
 /// Persists replayable idempotency records in the relational publisher store.
 /// </summary>
-public sealed class EfIdempotencyStore : IIdempotencyStore
+public sealed class EfIdempotencyStore(IDbContextFactory<KalshiIntegrationDbContext> dbContextFactory) : IIdempotencyStore
 {
-    private readonly IDbContextFactory<KalshiIntegrationDbContext> _dbContextFactory;
-
-    public EfIdempotencyStore(IDbContextFactory<KalshiIntegrationDbContext> dbContextFactory)
-    {
-        _dbContextFactory = dbContextFactory;
-    }
+    private readonly IDbContextFactory<KalshiIntegrationDbContext> _dbContextFactory = dbContextFactory;
 
     public async Task<IdempotencyRecord?> GetAsync(string scope, string key, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await dbContext.IdempotencyRecords.AsNoTracking()
+        await using KalshiIntegrationDbContext dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        IdempotencyRecordEntity? entity = await dbContext.IdempotencyRecords.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Scope == scope && x.Key == key, cancellationToken);
 
         return entity is null
@@ -31,8 +26,8 @@ public sealed class EfIdempotencyStore : IIdempotencyStore
 
     public async Task SaveAsync(IdempotencyRecord record, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await dbContext.IdempotencyRecords.SingleOrDefaultAsync(x => x.Scope == record.Scope && x.Key == record.Key, cancellationToken);
+        await using KalshiIntegrationDbContext dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        IdempotencyRecordEntity? entity = await dbContext.IdempotencyRecords.SingleOrDefaultAsync(x => x.Scope == record.Scope && x.Key == record.Key, cancellationToken);
         if (entity is null)
         {
             dbContext.IdempotencyRecords.Add(new IdempotencyRecordEntity

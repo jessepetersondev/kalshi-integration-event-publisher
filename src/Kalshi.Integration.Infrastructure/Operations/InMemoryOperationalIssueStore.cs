@@ -24,8 +24,8 @@ public sealed class InMemoryOperationalIssueStore : IOperationalIssueStore
 
     public Task<IReadOnlyList<OperationalIssue>> GetRecentAsync(string? category = null, int hours = 24, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow.AddHours(-Math.Abs(hours));
-        var issues = _issues
+        DateTimeOffset cutoff = DateTimeOffset.UtcNow.AddHours(-Math.Abs(hours));
+        OperationalIssue[] issues = _issues
             .Where(issue => issue.OccurredAt >= cutoff)
             .Where(issue => string.IsNullOrWhiteSpace(category) || string.Equals(issue.Category, category, StringComparison.OrdinalIgnoreCase))
             .ToArray();

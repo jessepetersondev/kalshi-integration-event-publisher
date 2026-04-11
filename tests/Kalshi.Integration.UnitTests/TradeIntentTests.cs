@@ -8,7 +8,7 @@ public sealed class TradeIntentTests
     [Fact]
     public void Constructor_ShouldNormalizeTickerAndPreserveBusinessData()
     {
-        var intent = new TradeIntent(" kxbtc-yes ", TradeSide.Yes, 3, 0.54321m, " Mean Reversion ");
+        TradeIntent intent = new(" kxbtc-yes ", TradeSide.Yes, 3, 0.54321m, " Mean Reversion ");
 
         Assert.Equal("KXBTC-YES", intent.Ticker);
         Assert.Equal(TradeSide.Yes, intent.Side);
@@ -21,10 +21,10 @@ public sealed class TradeIntentTests
     [Fact]
     public void Constructor_ShouldRespectExplicitCorrelationIdCreatedAtAndWithId()
     {
-        var createdAt = new DateTimeOffset(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
-        var persistedId = Guid.NewGuid();
+        DateTimeOffset createdAt = new(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
+        Guid persistedId = Guid.NewGuid();
 
-        var intent = new TradeIntent("KXBTC", TradeSide.No, 1, 0.40m, "Fade", " corr-1 ", createdAt)
+        TradeIntent intent = new TradeIntent("KXBTC", TradeSide.No, 1, 0.40m, "Fade", " corr-1 ", createdAt)
             .WithId(persistedId);
 
         Assert.Equal(persistedId, intent.Id);
@@ -66,9 +66,9 @@ public sealed class TradeIntentTests
     [Fact]
     public void Constructor_ShouldNormalizeMigratedActionFields()
     {
-        var targetPublisherOrderId = Guid.NewGuid();
+        Guid targetPublisherOrderId = Guid.NewGuid();
 
-        var intent = new TradeIntent(
+        TradeIntent intent = new(
             " kxbtc ",
             TradeSide.Yes,
             2,

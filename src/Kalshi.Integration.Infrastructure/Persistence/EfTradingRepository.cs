@@ -18,7 +18,12 @@ namespace Kalshi.Integration.Infrastructure.Persistence;
 /// <summary>
 /// Implements trading persistence on top of Entity Framework Core.
 /// </summary>
-public sealed class EfTradingRepository :
+/// <remarks>
+/// Initializes a new instance of the <see cref="EfTradingRepository"/> class.
+/// </remarks>
+/// <param name="dbContext">The database context used for trading persistence.</param>
+/// <param name="logger">The logger used for persistence diagnostics.</param>
+public sealed class EfTradingRepository(KalshiIntegrationDbContext dbContext, ILogger<EfTradingRepository> logger) :
     ITradeIntentRepository,
     IOrderRepository,
     IPositionSnapshotRepository,
@@ -39,24 +44,13 @@ public sealed class EfTradingRepository :
             new EventId(1101, nameof(DependencyCallFailed)),
             "Dependency call {Dependency} {Operation} failed after {ElapsedMs} ms.");
 
-    private readonly KalshiIntegrationDbContext _dbContext;
-    private readonly ILogger<EfTradingRepository> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="EfTradingRepository"/> class.
-    /// </summary>
-    /// <param name="dbContext">The database context used for trading persistence.</param>
-    /// <param name="logger">The logger used for persistence diagnostics.</param>
-    public EfTradingRepository(KalshiIntegrationDbContext dbContext, ILogger<EfTradingRepository> logger)
-    {
-        _dbContext = dbContext;
-        _logger = logger;
-    }
+    private readonly KalshiIntegrationDbContext _dbContext = dbContext;
+    private readonly ILogger<EfTradingRepository> _logger = logger;
 
     public Task AddTradeIntentAsync(TradeIntent tradeIntent, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("trade-intents.insert", async () =>
         {
-            var entity = new TradeIntentEntity
+            TradeIntentEntity entity = new()
             {
                 Id = tradeIntent.Id,
                 Ticker = tradeIntent.Ticker,
@@ -84,14 +78,14 @@ public sealed class EfTradingRepository :
     public Task<TradeIntent?> GetTradeIntentAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("trade-intents.get-by-id", async () =>
         {
-            var entity = await _dbContext.TradeIntents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == tradeIntentId, cancellationToken);
+            TradeIntentEntity? entity = await _dbContext.TradeIntents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == tradeIntentId, cancellationToken);
             return entity is null ? null : MapTradeIntent(entity);
         });
 
     public Task<TradeIntent?> GetTradeIntentByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("trade-intents.get-by-correlation-id", async () =>
         {
-            var entity = await _dbContext.TradeIntents.AsNoTracking().SingleOrDefaultAsync(x => x.CorrelationId == correlationId, cancellationToken);
+            TradeIntentEntity? entity = await _dbContext.TradeIntents.AsNoTracking().SingleOrDefaultAsync(x => x.CorrelationId == correlationId, cancellationToken);
             return entity is null ? null : MapTradeIntent(entity);
         });
 
@@ -102,15 +96,15 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("trade-intents.find-matching-cancel", async () =>
         {
-            var trimmedClientOrderId = string.IsNullOrWhiteSpace(targetClientOrderId) ? null : targetClientOrderId.Trim();
-            var trimmedExternalOrderId = string.IsNullOrWhiteSpace(targetExternalOrderId) ? null : targetExternalOrderId.Trim();
+            string? trimmedClientOrderId = string.IsNullOrWhiteSpace(targetClientOrderId) ? null : targetClientOrderId.Trim();
+            string? trimmedExternalOrderId = string.IsNullOrWhiteSpace(targetExternalOrderId) ? null : targetExternalOrderId.Trim();
 
             if (!targetPublisherOrderId.HasValue && trimmedClientOrderId is null && trimmedExternalOrderId is null)
             {
                 return null;
             }
 
-            var matchingEntities = await _dbContext.TradeIntents
+            List<TradeIntentEntity> matchingEntities = await _dbContext.TradeIntents
                 .AsNoTracking()
                 .Where(x => x.ActionType == TradeIntentActionType.Cancel.ToString())
                 .Where(x =>
@@ -119,7 +113,7 @@ public sealed class EfTradingRepository :
                     || (trimmedExternalOrderId != null && x.TargetExternalOrderId == trimmedExternalOrderId))
                 .ToListAsync(cancellationToken);
 
-            var entity = matchingEntities
+            TradeIntentEntity? entity = matchingEntities
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefault();
 
@@ -129,7 +123,7 @@ public sealed class EfTradingRepository :
     public Task AddOrderAsync(Order order, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.insert", async () =>
         {
-            var entity = new OrderEntity
+            OrderEntity entity = new()
             {
                 Id = order.Id,
                 TradeIntentId = order.TradeIntent.Id,
@@ -156,9 +150,9 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.submit-with-command", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            var duplicateTradeIntentOrderExists = await _dbContext.Orders
+            bool duplicateTradeIntentOrderExists = await _dbContext.Orders
                 .AsNoTracking()
                 .AnyAsync(x => x.TradeIntentId == order.TradeIntent.Id, cancellationToken);
 
@@ -169,7 +163,7 @@ public sealed class EfTradingRepository :
 
             if (!string.IsNullOrWhiteSpace(order.ClientOrderId))
             {
-                var duplicateClientOrderExists = await _dbContext.Orders
+                bool duplicateClientOrderExists = await _dbContext.Orders
                     .AsNoTracking()
                     .AnyAsync(x => x.ClientOrderId == order.ClientOrderId, cancellationToken);
 
@@ -252,7 +246,7 @@ public sealed class EfTradingRepository :
     public Task UpdateOrderAsync(Order order, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.update", async () =>
         {
-            var entity = await _dbContext.Orders.SingleAsync(x => x.Id == order.Id, cancellationToken);
+            OrderEntity entity = await _dbContext.Orders.SingleAsync(x => x.Id == order.Id, cancellationToken);
             entity.Status = order.CurrentStatus.ToString();
             entity.PublishStatus = order.PublishStatus.ToString();
             entity.LastResultStatus = order.LastResultStatus;
@@ -268,25 +262,25 @@ public sealed class EfTradingRepository :
     public Task<Order?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.get-by-id", async () =>
         {
-            var orderEntity = await _dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+            OrderEntity? orderEntity = await _dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
             if (orderEntity is null)
             {
                 return null;
             }
 
-            var tradeIntentEntity = await _dbContext.TradeIntents.AsNoTracking().SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.AsNoTracking().SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
             return MapOrder(orderEntity, tradeIntentEntity);
         });
 
     public Task<Order?> GetLatestOrderByTradeIntentIdAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("orders.get-latest-by-trade-intent-id", async () =>
         {
-            var orderEntities = await _dbContext.Orders
+            List<OrderEntity> orderEntities = await _dbContext.Orders
                 .AsNoTracking()
                 .Where(x => x.TradeIntentId == tradeIntentId)
                 .ToListAsync(cancellationToken);
 
-            var orderEntity = orderEntities
+            OrderEntity? orderEntity = orderEntities
                 .OrderByDescending(x => x.UpdatedAt)
                 .ThenByDescending(x => x.CreatedAt)
                 .FirstOrDefault();
@@ -296,21 +290,21 @@ public sealed class EfTradingRepository :
                 return null;
             }
 
-            var tradeIntentEntity = await _dbContext.TradeIntents.AsNoTracking().SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.AsNoTracking().SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
             return MapOrder(orderEntity, tradeIntentEntity);
         });
 
     public Task<IReadOnlyList<Order>> GetOrdersAsync(CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync<IReadOnlyList<Order>>("orders.list", async () =>
         {
-            var orderEntities = await _dbContext.Orders.AsNoTracking().ToListAsync(cancellationToken);
+            List<OrderEntity> orderEntities = await _dbContext.Orders.AsNoTracking().ToListAsync(cancellationToken);
             if (orderEntities.Count == 0)
             {
                 return Array.Empty<Order>();
             }
 
-            var tradeIntentIds = orderEntities.Select(x => x.TradeIntentId).Distinct().ToArray();
-            var tradeIntentEntities = await _dbContext.TradeIntents
+            Guid[] tradeIntentIds = orderEntities.Select(x => x.TradeIntentId).Distinct().ToArray();
+            Dictionary<Guid, TradeIntentEntity> tradeIntentEntities = await _dbContext.TradeIntents
                 .AsNoTracking()
                 .Where(x => tradeIntentIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, cancellationToken);
@@ -324,7 +318,7 @@ public sealed class EfTradingRepository :
     public Task AddOrderEventAsync(ExecutionEvent executionEvent, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("order-events.insert", async () =>
         {
-            var entity = new OrderEventEntity
+            OrderEventEntity entity = new()
             {
                 Id = executionEvent.Id,
                 OrderId = executionEvent.OrderId,
@@ -340,7 +334,7 @@ public sealed class EfTradingRepository :
     public Task<IReadOnlyList<ExecutionEvent>> GetOrderEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync<IReadOnlyList<ExecutionEvent>>("order-events.list-by-order-id", async () =>
         {
-            var entities = await _dbContext.OrderEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
+            List<OrderEventEntity> entities = await _dbContext.OrderEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
             return entities.OrderBy(x => x.OccurredAt).Select(MapExecutionEvent).ToArray();
         });
 
@@ -362,7 +356,7 @@ public sealed class EfTradingRepository :
     public Task<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>> GetOrderLifecycleEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>>("order-lifecycle-events.list-by-order-id", async () =>
         {
-            var entities = await _dbContext.OrderLifecycleEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
+            List<OrderLifecycleEventEntity> entities = await _dbContext.OrderLifecycleEvents.AsNoTracking().Where(x => x.OrderId == orderId).ToListAsync(cancellationToken);
             return entities
                 .OrderBy(x => x.OccurredAt)
                 .Select(x => (x.Stage, x.Details, x.OccurredAt))
@@ -372,7 +366,7 @@ public sealed class EfTradingRepository :
     public Task<bool> TryAddResultEventAsync(Guid resultEventId, Guid? orderId, string name, string? correlationId, string? idempotencyKey, string payloadJson, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("result-events.insert", async () =>
         {
-            var exists = await _dbContext.ResultEvents.AsNoTracking().AnyAsync(x => x.Id == resultEventId, cancellationToken);
+            bool exists = await _dbContext.ResultEvents.AsNoTracking().AnyAsync(x => x.Id == resultEventId, cancellationToken);
             if (exists)
             {
                 return false;
@@ -399,9 +393,9 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("result-events.apply", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            var resultEntity = await _dbContext.ResultEvents.SingleOrDefaultAsync(x => x.Id == resultEvent.Id, cancellationToken);
+            ResultEventEntity? resultEntity = await _dbContext.ResultEvents.SingleOrDefaultAsync(x => x.Id == resultEvent.Id, cancellationToken);
             if (resultEntity?.AppliedAt.HasValue == true)
             {
                 return false;
@@ -426,11 +420,11 @@ public sealed class EfTradingRepository :
             resultEntity.ApplyAttemptCount++;
             resultEntity.LastApplyAttemptAt = DateTimeOffset.UtcNow;
 
-            var orderEntity = await _dbContext.Orders.SingleOrDefaultAsync(x => x.Id == mutation.OrderId, cancellationToken)
+            OrderEntity orderEntity = await _dbContext.Orders.SingleOrDefaultAsync(x => x.Id == mutation.OrderId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Order '{mutation.OrderId}' was not found.");
-            var tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
-            var order = MapOrder(orderEntity, tradeIntentEntity);
-            var previousStatus = order.CurrentStatus;
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            Order order = MapOrder(orderEntity, tradeIntentEntity);
+            OrderStatus previousStatus = order.CurrentStatus;
 
             order.ApplyResult(
                 mutation.ResultStatus,
@@ -496,7 +490,7 @@ public sealed class EfTradingRepository :
     public Task UpsertPositionSnapshotAsync(PositionSnapshot positionSnapshot, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("position-snapshots.upsert", async () =>
         {
-            var existing = await _dbContext.PositionSnapshots.SingleOrDefaultAsync(x => x.Ticker == positionSnapshot.Ticker && x.Side == positionSnapshot.Side.ToString(), cancellationToken);
+            PositionSnapshotEntity? existing = await _dbContext.PositionSnapshots.SingleOrDefaultAsync(x => x.Ticker == positionSnapshot.Ticker && x.Side == positionSnapshot.Side.ToString(), cancellationToken);
             if (existing is null)
             {
                 _dbContext.PositionSnapshots.Add(new PositionSnapshotEntity
@@ -522,14 +516,14 @@ public sealed class EfTradingRepository :
     public Task<IReadOnlyList<PositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync<IReadOnlyList<PositionSnapshot>>("position-snapshots.list", async () =>
         {
-            var entities = await _dbContext.PositionSnapshots.AsNoTracking().OrderBy(x => x.Ticker).ToListAsync(cancellationToken);
+            List<PositionSnapshotEntity> entities = await _dbContext.PositionSnapshots.AsNoTracking().OrderBy(x => x.Ticker).ToListAsync(cancellationToken);
             return entities.Select(MapPositionSnapshot).ToArray();
         });
 
     public Task<OutboxDispatchItem?> GetAsync(Guid messageId, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.get", async () =>
         {
-            var entity = await _dbContext.PublisherOutboxMessages.AsNoTracking().SingleOrDefaultAsync(x => x.Id == messageId, cancellationToken);
+            PublisherOutboxMessageEntity? entity = await _dbContext.PublisherOutboxMessages.AsNoTracking().SingleOrDefaultAsync(x => x.Id == messageId, cancellationToken);
             return entity is null ? null : MapOutboxDispatchItem(entity);
         });
 
@@ -541,8 +535,8 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync<IReadOnlyList<OutboxDispatchItem>>("publisher-outbox.acquire-due", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var entities = (await _dbContext.PublisherOutboxMessages
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            List<PublisherOutboxMessageEntity> entities = (await _dbContext.PublisherOutboxMessages
                 .Where(x => x.Status == OutboxMessageStatus.Pending.ToString())
                 .ToListAsync(cancellationToken))
                 .Where(x => x.NextAttemptAt <= now)
@@ -551,7 +545,7 @@ public sealed class EfTradingRepository :
                 .Take(Math.Max(1, maxCount))
                 .ToList();
 
-            foreach (var entity in entities)
+            foreach (PublisherOutboxMessageEntity? entity in entities)
             {
                 entity.Status = OutboxMessageStatus.InFlight.ToString();
                 entity.ProcessorId = processorId;
@@ -573,7 +567,7 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.record-attempt", async () =>
         {
-            var message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
+            PublisherOutboxMessageEntity message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
             message.AttemptCount = Math.Max(message.AttemptCount, attemptNumber);
             message.LastAttemptAt = occurredAt;
             message.LastFailureKind = failureKind;
@@ -590,9 +584,9 @@ public sealed class EfTradingRepository :
                 OccurredAt = occurredAt,
             });
 
-            var orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
-            var tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
-            var order = MapOrder(orderEntity, tradeIntentEntity);
+            OrderEntity orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            Order order = MapOrder(orderEntity, tradeIntentEntity);
             order.MarkPublishAttempted(occurredAt);
             ApplyOrderState(orderEntity, order);
 
@@ -611,16 +605,16 @@ public sealed class EfTradingRepository :
     public Task MarkPublishedAsync(Guid messageId, DateTimeOffset publishedAt, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.mark-published", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            PublisherOutboxMessageEntity message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
             message.Status = OutboxMessageStatus.Published.ToString();
             message.PublishedAt = publishedAt;
             message.ProcessorId = null;
             message.LeaseExpiresAt = null;
 
-            var orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
-            var tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
-            var order = MapOrder(orderEntity, tradeIntentEntity);
+            OrderEntity orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            Order order = MapOrder(orderEntity, tradeIntentEntity);
             order.MarkPublishConfirmed(messageId, publishedAt);
             ApplyOrderState(orderEntity, order);
 
@@ -646,8 +640,8 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.schedule-retry", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            PublisherOutboxMessageEntity message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
             message.Status = OutboxMessageStatus.Pending.ToString();
             message.NextAttemptAt = nextAttemptAt;
             message.ProcessorId = null;
@@ -655,9 +649,9 @@ public sealed class EfTradingRepository :
             message.LastFailureKind = failureKind;
             message.LastError = errorMessage;
 
-            var orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
-            var tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
-            var order = MapOrder(orderEntity, tradeIntentEntity);
+            OrderEntity orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            Order order = MapOrder(orderEntity, tradeIntentEntity);
             order.MarkRetryScheduled(errorMessage, messageId, occurredAt);
             ApplyOrderState(orderEntity, order);
 
@@ -682,17 +676,17 @@ public sealed class EfTradingRepository :
         CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.manual-intervention", async () =>
         {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            PublisherOutboxMessageEntity message = await _dbContext.PublisherOutboxMessages.SingleAsync(x => x.Id == messageId, cancellationToken);
             message.Status = OutboxMessageStatus.ManualInterventionRequired.ToString();
             message.ProcessorId = null;
             message.LeaseExpiresAt = null;
             message.LastFailureKind = failureKind;
             message.LastError = errorMessage;
 
-            var orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
-            var tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
-            var order = MapOrder(orderEntity, tradeIntentEntity);
+            OrderEntity orderEntity = await _dbContext.Orders.SingleAsync(x => x.Id == message.AggregateId, cancellationToken);
+            TradeIntentEntity tradeIntentEntity = await _dbContext.TradeIntents.SingleAsync(x => x.Id == orderEntity.TradeIntentId, cancellationToken);
+            Order order = MapOrder(orderEntity, tradeIntentEntity);
             order.MarkManualInterventionRequired(errorMessage, messageId, occurredAt);
             ApplyOrderState(orderEntity, order);
 
@@ -712,13 +706,13 @@ public sealed class EfTradingRepository :
     public Task<int> ReleaseExpiredLeasesAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.release-expired", async () =>
         {
-            var expired = (await _dbContext.PublisherOutboxMessages
+            List<PublisherOutboxMessageEntity> expired = (await _dbContext.PublisherOutboxMessages
                 .Where(x => x.Status == OutboxMessageStatus.InFlight.ToString())
                 .ToListAsync(cancellationToken))
                 .Where(x => x.LeaseExpiresAt <= now)
                 .ToList();
 
-            foreach (var entity in expired)
+            foreach (PublisherOutboxMessageEntity? entity in expired)
             {
                 entity.Status = OutboxMessageStatus.Pending.ToString();
                 entity.ProcessorId = null;
@@ -732,16 +726,16 @@ public sealed class EfTradingRepository :
     public Task<OutboxHealthSnapshot> GetHealthSnapshotAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
         => ExecuteDependencyCallAsync("publisher-outbox.health", async () =>
         {
-            var pendingQuery = _dbContext.PublisherOutboxMessages
+            IQueryable<PublisherOutboxMessageEntity> pendingQuery = _dbContext.PublisherOutboxMessages
                 .AsNoTracking()
                 .Where(x => x.Status == OutboxMessageStatus.Pending.ToString() || x.Status == OutboxMessageStatus.InFlight.ToString());
 
-            var manualInterventionCount = await _dbContext.PublisherOutboxMessages
+            long manualInterventionCount = await _dbContext.PublisherOutboxMessages
                 .AsNoTracking()
                 .LongCountAsync(x => x.Status == OutboxMessageStatus.ManualInterventionRequired.ToString(), cancellationToken);
 
-            var pendingCount = await pendingQuery.LongCountAsync(cancellationToken);
-            var pendingCreatedAt = await pendingQuery
+            long pendingCount = await pendingQuery.LongCountAsync(cancellationToken);
+            List<DateTimeOffset> pendingCreatedAt = await pendingQuery
                 .Select(x => x.CreatedAt)
                 .ToListAsync(cancellationToken);
             DateTimeOffset? oldestPendingCreatedAt = pendingCreatedAt.Count == 0
@@ -753,8 +747,8 @@ public sealed class EfTradingRepository :
 
     private async Task ExecuteDependencyCallAsync(string operation, Func<Task> action)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var dependencyName = GetDependencyName();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        string dependencyName = GetDependencyName();
 
         try
         {
@@ -785,12 +779,12 @@ public sealed class EfTradingRepository :
 
     private async Task<T> ExecuteDependencyCallAsync<T>(string operation, Func<Task<T>> action)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var dependencyName = GetDependencyName();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        string dependencyName = GetDependencyName();
 
         try
         {
-            var result = await action();
+            T? result = await action();
             stopwatch.Stop();
 
             DependencyCallSucceeded(
@@ -819,7 +813,7 @@ public sealed class EfTradingRepository :
 
     private static TradeIntent MapTradeIntent(TradeIntentEntity entity)
     {
-        var actionType = Enum.TryParse<TradeIntentActionType>(entity.ActionType, ignoreCase: true, out var parsedActionType)
+        TradeIntentActionType actionType = Enum.TryParse<TradeIntentActionType>(entity.ActionType, ignoreCase: true, out TradeIntentActionType parsedActionType)
             ? parsedActionType
             : TradeIntentActionType.Entry;
 
@@ -856,7 +850,7 @@ public sealed class EfTradingRepository :
 
     private async Task UpsertPositionSnapshotEntityAsync(PositionSnapshot positionSnapshot, CancellationToken cancellationToken)
     {
-        var existing = await _dbContext.PositionSnapshots.SingleOrDefaultAsync(
+        PositionSnapshotEntity? existing = await _dbContext.PositionSnapshots.SingleOrDefaultAsync(
             x => x.Ticker == positionSnapshot.Ticker && x.Side == positionSnapshot.Side.ToString(),
             cancellationToken);
 
@@ -895,7 +889,7 @@ public sealed class EfTradingRepository :
 
     private static OutboxDispatchItem MapOutboxDispatchItem(PublisherOutboxMessageEntity entity)
     {
-        var status = Enum.TryParse<OutboxMessageStatus>(entity.Status, ignoreCase: true, out var parsedStatus)
+        OutboxMessageStatus status = Enum.TryParse<OutboxMessageStatus>(entity.Status, ignoreCase: true, out OutboxMessageStatus parsedStatus)
             ? parsedStatus
             : OutboxMessageStatus.Pending;
 
@@ -926,9 +920,9 @@ public sealed class EfTradingRepository :
 
     private static Order MapOrder(OrderEntity orderEntity, TradeIntentEntity tradeIntentEntity)
     {
-        var tradeIntent = MapTradeIntent(tradeIntentEntity);
-        var order = new Order(tradeIntent);
-        var publishStatus = Enum.TryParse<OrderPublishStatus>(orderEntity.PublishStatus, ignoreCase: true, out var parsedPublishStatus)
+        TradeIntent tradeIntent = MapTradeIntent(tradeIntentEntity);
+        Order order = new(tradeIntent);
+        OrderPublishStatus publishStatus = Enum.TryParse<OrderPublishStatus>(orderEntity.PublishStatus, ignoreCase: true, out OrderPublishStatus parsedPublishStatus)
             ? parsedPublishStatus
             : string.Equals(orderEntity.PublishStatus, "legacy", StringComparison.OrdinalIgnoreCase)
                 ? OrderPublishStatus.PublishConfirmed

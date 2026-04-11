@@ -11,11 +11,11 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void ApplicationEventEnvelope_Create_ShouldPopulateDefaults()
     {
-        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+        DateTimeOffset before = DateTimeOffset.UtcNow.AddSeconds(-1);
 
-        var envelope = ApplicationEventEnvelope.Create("trading", "order.created");
+        ApplicationEventEnvelope envelope = ApplicationEventEnvelope.Create("trading", "order.created");
 
-        var after = DateTimeOffset.UtcNow.AddSeconds(1);
+        DateTimeOffset after = DateTimeOffset.UtcNow.AddSeconds(1);
         Assert.NotEqual(Guid.Empty, envelope.Id);
         Assert.Equal("trading", envelope.Category);
         Assert.Equal("order.created", envelope.Name);
@@ -26,14 +26,14 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void ApplicationEventEnvelope_Create_ShouldRespectExplicitValues()
     {
-        var occurredAt = new DateTimeOffset(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
-        var attributes = new Dictionary<string, string?>
+        DateTimeOffset occurredAt = new(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
+        Dictionary<string, string?> attributes = new()
         {
             ["ticker"] = "KXBTC",
             ["status"] = "accepted"
         };
 
-        var envelope = ApplicationEventEnvelope.Create(
+        ApplicationEventEnvelope envelope = ApplicationEventEnvelope.Create(
             category: "risk",
             name: "trade-intent.validated",
             resourceId: "resource-1",
@@ -52,9 +52,9 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void AuditRecord_Create_ShouldPopulateExpectedFields()
     {
-        var occurredAt = new DateTimeOffset(2026, 3, 28, 12, 1, 0, TimeSpan.Zero);
+        DateTimeOffset occurredAt = new(2026, 3, 28, 12, 1, 0, TimeSpan.Zero);
 
-        var record = AuditRecord.Create(
+        AuditRecord record = AuditRecord.Create(
             category: "trading",
             action: "create-order",
             outcome: "accepted",
@@ -78,9 +78,9 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void OperationalIssue_Create_ShouldPopulateExpectedFields()
     {
-        var occurredAt = new DateTimeOffset(2026, 3, 28, 12, 2, 0, TimeSpan.Zero);
+        DateTimeOffset occurredAt = new(2026, 3, 28, 12, 2, 0, TimeSpan.Zero);
 
-        var issue = OperationalIssue.Create(
+        OperationalIssue issue = OperationalIssue.Create(
             category: "integration",
             severity: "error",
             source: "kalshi-webhook",
@@ -100,9 +100,9 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void IdempotencyRecord_Create_ShouldPopulateExpectedFields()
     {
-        var createdAt = new DateTimeOffset(2026, 3, 28, 12, 3, 0, TimeSpan.Zero);
+        DateTimeOffset createdAt = new(2026, 3, 28, 12, 3, 0, TimeSpan.Zero);
 
-        var record = IdempotencyRecord.Create("orders", "idem-1", "hash-1", 201, "{\"id\":1}", createdAt);
+        IdempotencyRecord record = IdempotencyRecord.Create("orders", "idem-1", "hash-1", 201, "{\"id\":1}", createdAt);
 
         Assert.NotEqual(Guid.Empty, record.Id);
         Assert.Equal("orders", record.Scope);
@@ -116,7 +116,7 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void RiskDecision_ShouldExposeConstructorValues()
     {
-        var decision = new RiskDecision(false, "rejected", new[] { "reason-1" }, 5, true);
+        RiskDecision decision = new(false, "rejected", new[] { "reason-1" }, 5, true);
 
         Assert.False(decision.Accepted);
         Assert.Equal("rejected", decision.Decision);
@@ -128,7 +128,7 @@ public sealed class ApplicationRecordTests
     [Fact]
     public void ExecutionUpdateResult_ShouldExposeConstructorValues()
     {
-        var orderResponse = new OrderResponse(
+        OrderResponse orderResponse = new(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "KXBTC",
@@ -142,7 +142,7 @@ public sealed class ApplicationRecordTests
             DateTimeOffset.UtcNow,
             new List<OrderEventResponse>());
 
-        var result = new ExecutionUpdateResult(orderResponse.Id, "filled", 1, orderResponse.UpdatedAt, orderResponse);
+        ExecutionUpdateResult result = new(orderResponse.Id, "filled", 1, orderResponse.UpdatedAt, orderResponse);
 
         Assert.Equal(orderResponse.Id, result.OrderId);
         Assert.Equal("filled", result.Status);

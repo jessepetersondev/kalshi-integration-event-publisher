@@ -11,18 +11,18 @@ public sealed class KalshiApiClientTests
     [Fact]
     public async Task PlaceOrderAsync_ShouldSerializePriceFieldsAsStrings()
     {
-        using var rsa = RSA.Create(2048);
-        var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        using RSA rsa = RSA.Create(2048);
+        CapturingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""{"order":{"order_id":"kalshi-order-1"}}"""),
         });
 
-        using var httpClient = new HttpClient(handler)
+        using HttpClient httpClient = new(handler)
         {
             BaseAddress = new Uri("https://api.elections.kalshi.com/trade-api/v2/"),
         };
 
-        var client = new KalshiApiClient(
+        KalshiApiClient client = new(
             httpClient,
             Options.Create(new KalshiApiOptions
             {
@@ -50,20 +50,15 @@ public sealed class KalshiApiClientTests
         Assert.NotNull(handler.LastRequest);
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
 
-        var json = Assert.IsType<JsonObject>(JsonNode.Parse(handler.LastRequestBody));
+        JsonObject json = Assert.IsType<JsonObject>(JsonNode.Parse(handler.LastRequestBody));
 
         Assert.Equal("0.6100", json["no_price_dollars"]!.GetValue<string>());
         Assert.Equal("test-key", handler.LastRequest.Headers.GetValues("KALSHI-ACCESS-KEY").Single());
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
+    private sealed class CapturingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory;
-
-        public CapturingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory = responseFactory;
 
         public HttpRequestMessage? LastRequest { get; private set; }
 

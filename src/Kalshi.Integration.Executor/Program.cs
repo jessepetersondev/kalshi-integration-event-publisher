@@ -1,6 +1,6 @@
-using Kalshi.Integration.Executor.Configuration;
 using Kalshi.Integration.Contracts.Diagnostics;
 using Kalshi.Integration.Executor;
+using Kalshi.Integration.Executor.Configuration;
 using Kalshi.Integration.Executor.Infrastructure;
 using Kalshi.Integration.Executor.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -9,12 +9,12 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExecutor(builder.Configuration);
 
-var configuredOpenTelemetryOptions = builder.Configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>() ?? new OpenTelemetryOptions();
+OpenTelemetryOptions configuredOpenTelemetryOptions = builder.Configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>() ?? new OpenTelemetryOptions();
 
 builder.Services.AddOptions<OpenTelemetryOptions>()
     .Bind(builder.Configuration.GetSection(OpenTelemetryOptions.SectionName))
@@ -64,11 +64,11 @@ builder.Services.AddOpenTelemetry()
         }
     });
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+using (IServiceScope scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<ExecutorDbContext>();
+    ExecutorDbContext dbContext = scope.ServiceProvider.GetRequiredService<ExecutorDbContext>();
     await dbContext.Database.MigrateAsync();
 }
 

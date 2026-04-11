@@ -16,45 +16,33 @@ using Microsoft.Extensions.Options;
 
 namespace Kalshi.Integration.Executor.Handlers;
 
-public sealed class OrderCreatedHandler
+public sealed class OrderCreatedHandler(
+    ExecutorDbContext dbContext,
+    IKalshiApiClient kalshiApiClient,
+    RabbitMqResultEventPublisher resultEventPublisher,
+    RabbitMqInboundEventPublisher inboundEventPublisher,
+    DeadLetterEventPublisher deadLetterEventPublisher,
+    ExecutionReliabilityPolicy reliabilityPolicy,
+    IOptions<KalshiApiOptions> options,
+    ILogger<OrderCreatedHandler> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ExecutorDbContext _dbContext;
-    private readonly IKalshiApiClient _kalshiApiClient;
-    private readonly RabbitMqResultEventPublisher _resultEventPublisher;
-    private readonly RabbitMqInboundEventPublisher _inboundEventPublisher;
-    private readonly DeadLetterEventPublisher _deadLetterEventPublisher;
-    private readonly ExecutionReliabilityPolicy _reliabilityPolicy;
-    private readonly KalshiApiOptions _options;
-    private readonly ILogger<OrderCreatedHandler> _logger;
+    private readonly ExecutorDbContext _dbContext = dbContext;
+    private readonly IKalshiApiClient _kalshiApiClient = kalshiApiClient;
+    private readonly RabbitMqResultEventPublisher _resultEventPublisher = resultEventPublisher;
+    private readonly RabbitMqInboundEventPublisher _inboundEventPublisher = inboundEventPublisher;
+    private readonly DeadLetterEventPublisher _deadLetterEventPublisher = deadLetterEventPublisher;
+    private readonly ExecutionReliabilityPolicy _reliabilityPolicy = reliabilityPolicy;
+    private readonly KalshiApiOptions _options = options.Value;
+    private readonly ILogger<OrderCreatedHandler> _logger = logger;
     private readonly string _processorId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
-
-    public OrderCreatedHandler(
-        ExecutorDbContext dbContext,
-        IKalshiApiClient kalshiApiClient,
-        RabbitMqResultEventPublisher resultEventPublisher,
-        RabbitMqInboundEventPublisher inboundEventPublisher,
-        DeadLetterEventPublisher deadLetterEventPublisher,
-        ExecutionReliabilityPolicy reliabilityPolicy,
-        IOptions<KalshiApiOptions> options,
-        ILogger<OrderCreatedHandler> logger)
-    {
-        _dbContext = dbContext;
-        _kalshiApiClient = kalshiApiClient;
-        _resultEventPublisher = resultEventPublisher;
-        _inboundEventPublisher = inboundEventPublisher;
-        _deadLetterEventPublisher = deadLetterEventPublisher;
-        _reliabilityPolicy = reliabilityPolicy;
-        _options = options.Value;
-        _logger = logger;
-    }
 
     public async Task HandleAsync(ApplicationEventEnvelope envelope, CancellationToken cancellationToken = default)
     {
-        var command = ParseOrderCommand(envelope);
-        var acquisition = await AcquireExecutionAsync(envelope, command, cancellationToken);
-        var execution = acquisition.Execution;
+        OrderCommand command = ParseOrderCommand(envelope);
+        ExecutionAcquisition acquisition = await AcquireExecutionAsync(envelope, command, cancellationToken);
+        ExecutionRecordEntity execution = acquisition.Execution;
 
         try
         {
@@ -70,7 +58,7 @@ public sealed class OrderCreatedHandler
                 return;
             }
 
-            var recovered = await TryRecoverFromPersistedExecutionStateAsync(command, execution, cancellationToken)
+            JsonObject? recovered = await TryRecoverFromPersistedExecutionStateAsync(command, execution, cancellationToken)
                 ?? await TryRecoverExistingOrderAsync(command, cancellationToken);
             if (recovered is null)
             {
@@ -91,7 +79,7 @@ public sealed class OrderCreatedHandler
 
     private async Task<ExecutionAcquisition> AcquireExecutionAsync(ApplicationEventEnvelope envelope, OrderCommand command, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (int attempt = 0; attempt < 2; attempt++)
         {
             try
             {
@@ -108,13 +96,13 @@ public sealed class OrderCreatedHandler
 
     private async Task<ExecutionAcquisition> AcquireExecutionCoreAsync(ApplicationEventEnvelope envelope, OrderCommand command, CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        var inbound = await _dbContext.InboundMessages.SingleOrDefaultAsync(x => x.Id == envelope.Id, cancellationToken);
+        ExecutorInboundMessageEntity? inbound = await _dbContext.InboundMessages.SingleOrDefaultAsync(x => x.Id == envelope.Id, cancellationToken);
         if (inbound?.HandledAt.HasValue == true)
         {
-            var existingExecution = await FindExecutionAsync(command, cancellationToken)
+            ExecutionRecordEntity existingExecution = await FindExecutionAsync(command, cancellationToken)
                 ?? throw new KeyNotFoundException($"Execution for publisher order '{command.PublisherOrderId}' was not found.");
 
             await transaction.CommitAsync(cancellationToken);
@@ -141,7 +129,7 @@ public sealed class OrderCreatedHandler
         inbound.ReceiveAttemptCount++;
         inbound.LastReceivedAt = now;
 
-        var execution = await FindExecutionAsync(command, cancellationToken);
+        ExecutionRecordEntity? execution = await FindExecutionAsync(command, cancellationToken);
 
         if (execution is null)
         {
@@ -199,7 +187,7 @@ public sealed class OrderCreatedHandler
 
     private async Task HandleCancelAsync(ApplicationEventEnvelope envelope, OrderCommand command, ExecutionRecordEntity execution, CancellationToken cancellationToken)
     {
-        var externalOrderId = !string.IsNullOrWhiteSpace(command.TargetExternalOrderId)
+        string? externalOrderId = !string.IsNullOrWhiteSpace(command.TargetExternalOrderId)
             ? command.TargetExternalOrderId
             : await TryResolveTargetExternalOrderIdAsync(command, cancellationToken);
 
@@ -208,19 +196,19 @@ public sealed class OrderCreatedHandler
             throw new InvalidOperationException("Cancel command is missing a target external order id.");
         }
 
-        var canceled = ExtractOrderNode(await _kalshiApiClient.CancelOrderAsync(externalOrderId, _options.Subaccount, cancellationToken));
+        JsonObject canceled = ExtractOrderNode(await _kalshiApiClient.CancelOrderAsync(externalOrderId, _options.Subaccount, cancellationToken));
         await PersistSuccessfulExecutionAsync(envelope, command, execution.Id, canceled, cancellationToken, overrideStatus: "canceled");
     }
 
     private async Task<JsonObject?> TryRecoverExistingOrderAsync(OrderCommand command, CancellationToken cancellationToken)
     {
-        var payload = await _kalshiApiClient.GetOrdersAsync(command.Ticker, _options.Subaccount, cancellationToken);
+        JsonNode payload = await _kalshiApiClient.GetOrdersAsync(command.Ticker, _options.Subaccount, cancellationToken);
         if (payload["orders"] is not JsonArray orders)
         {
             return null;
         }
 
-        foreach (var item in orders.OfType<JsonObject>())
+        foreach (JsonObject item in orders.OfType<JsonObject>())
         {
             if (string.Equals(item["client_order_id"]?.GetValue<string>(), command.ClientOrderId, StringComparison.Ordinal))
             {
@@ -236,7 +224,7 @@ public sealed class OrderCreatedHandler
         ExecutionRecordEntity execution,
         CancellationToken cancellationToken)
     {
-        var externalOrderId = execution.ExternalOrderId;
+        string? externalOrderId = execution.ExternalOrderId;
 
         if (string.IsNullOrWhiteSpace(externalOrderId))
         {
@@ -252,7 +240,7 @@ public sealed class OrderCreatedHandler
             return null;
         }
 
-        var recovered = ExtractOrderNode(await _kalshiApiClient.GetOrderAsync(externalOrderId, _options.Subaccount, cancellationToken));
+        JsonObject recovered = ExtractOrderNode(await _kalshiApiClient.GetOrderAsync(externalOrderId, _options.Subaccount, cancellationToken));
         return HasOrderIdentity(recovered) ? recovered : null;
     }
 
@@ -260,10 +248,10 @@ public sealed class OrderCreatedHandler
     {
         if (!string.IsNullOrWhiteSpace(command.TargetClientOrderId))
         {
-            var existing = await _kalshiApiClient.GetOrdersAsync(command.Ticker, _options.Subaccount, cancellationToken);
+            JsonNode existing = await _kalshiApiClient.GetOrdersAsync(command.Ticker, _options.Subaccount, cancellationToken);
             if (existing["orders"] is JsonArray orders)
             {
-                foreach (var item in orders.OfType<JsonObject>())
+                foreach (JsonObject item in orders.OfType<JsonObject>())
                 {
                     if (string.Equals(item["client_order_id"]?.GetValue<string>(), command.TargetClientOrderId, StringComparison.Ordinal))
                     {
@@ -273,7 +261,7 @@ public sealed class OrderCreatedHandler
             }
         }
 
-        var mapping = await _dbContext.ExternalOrderMappings.AsNoTracking()
+        ExternalOrderMappingEntity? mapping = await _dbContext.ExternalOrderMappings.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PublisherOrderId == command.TargetPublisherOrderId, cancellationToken);
         return mapping?.ExternalOrderId;
     }
@@ -291,7 +279,7 @@ public sealed class OrderCreatedHandler
 
         if (!string.IsNullOrWhiteSpace(execution.ExternalOrderId))
         {
-            var recovered = await TryRecoverFromPersistedExecutionStateAsync(command, execution, cancellationToken)
+            JsonObject? recovered = await TryRecoverFromPersistedExecutionStateAsync(command, execution, cancellationToken)
                 ?? await TryRecoverExistingOrderAsync(command, cancellationToken);
 
             if (recovered is not null)
@@ -336,16 +324,16 @@ public sealed class OrderCreatedHandler
         CancellationToken cancellationToken,
         string? overrideStatus = null)
     {
-        var now = DateTimeOffset.UtcNow;
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        var execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == executionRecordId, cancellationToken);
-        var inbound = await _dbContext.InboundMessages.SingleAsync(x => x.Id == envelope.Id, cancellationToken);
+        ExecutionRecordEntity execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == executionRecordId, cancellationToken);
+        ExecutorInboundMessageEntity inbound = await _dbContext.InboundMessages.SingleAsync(x => x.Id == envelope.Id, cancellationToken);
 
-        var externalOrderId = orderNode["order_id"]?.GetValue<string>();
-        var clientOrderId = orderNode["client_order_id"]?.GetValue<string>() ?? command.ClientOrderId;
-        var orderStatus = overrideStatus ?? orderNode["status"]?.GetValue<string>() ?? "accepted";
-        var filledQuantity = ParseInteger(orderNode["fill_count_fp"]) ?? ParseInteger(orderNode["filled_quantity"]) ?? 0;
+        string? externalOrderId = orderNode["order_id"]?.GetValue<string>();
+        string clientOrderId = orderNode["client_order_id"]?.GetValue<string>() ?? command.ClientOrderId;
+        string orderStatus = overrideStatus ?? orderNode["status"]?.GetValue<string>() ?? "accepted";
+        int filledQuantity = ParseInteger(orderNode["fill_count_fp"]) ?? ParseInteger(orderNode["filled_quantity"]) ?? 0;
 
         execution.ExternalOrderId = externalOrderId;
         execution.Status = NormalizeStatus(orderStatus);
@@ -358,7 +346,7 @@ public sealed class OrderCreatedHandler
 
         if (!string.IsNullOrWhiteSpace(externalOrderId))
         {
-            var mapping = await _dbContext.ExternalOrderMappings.SingleOrDefaultAsync(x => x.PublisherOrderId == command.PublisherOrderId, cancellationToken);
+            ExternalOrderMappingEntity? mapping = await _dbContext.ExternalOrderMappings.SingleOrDefaultAsync(x => x.PublisherOrderId == command.PublisherOrderId, cancellationToken);
             if (mapping is null)
             {
                 _dbContext.ExternalOrderMappings.Add(new ExternalOrderMappingEntity
@@ -394,10 +382,10 @@ public sealed class OrderCreatedHandler
         bool deadLetter,
         CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == executionRecordId, cancellationToken);
-        var inbound = await _dbContext.InboundMessages.SingleAsync(x => x.Id == envelope.Id, cancellationToken);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        ExecutionRecordEntity execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == executionRecordId, cancellationToken);
+        ExecutorInboundMessageEntity inbound = await _dbContext.InboundMessages.SingleAsync(x => x.Id == envelope.Id, cancellationToken);
 
         execution.Status = deadLetter ? "dead-lettered" : "failed";
         execution.LastError = exception.Message;
@@ -407,7 +395,7 @@ public sealed class OrderCreatedHandler
         execution.LeaseExpiresAt = null;
         execution.UpdatedAt = now;
 
-        var failureEvent = deadLetter
+        ApplicationEventEnvelope failureEvent = deadLetter
             ? CreateDeadLetterEvent(envelope, command, exception)
             : CreateFailureResultEvent(envelope, command, exception);
 
@@ -429,7 +417,7 @@ public sealed class OrderCreatedHandler
 
     private JsonObject BuildPlaceOrderPayload(OrderCommand command)
     {
-        var payload = new JsonObject
+        JsonObject payload = new()
         {
             ["ticker"] = command.Ticker,
             ["client_order_id"] = command.ClientOrderId,
@@ -453,7 +441,7 @@ public sealed class OrderCreatedHandler
     }
 
     private static JsonObject ExtractOrderNode(JsonNode payload)
-        => payload["order"] as JsonObject ?? payload as JsonObject ?? new JsonObject();
+        => payload["order"] as JsonObject ?? payload as JsonObject ?? [];
 
     private static bool HasOrderIdentity(JsonObject orderNode)
         => !string.IsNullOrWhiteSpace(orderNode["order_id"]?.GetValue<string>());
@@ -467,8 +455,8 @@ public sealed class OrderCreatedHandler
 
         return node switch
         {
-            JsonValue value when value.TryGetValue<int>(out var intValue) => intValue,
-            JsonValue value when value.TryGetValue<string>(out var stringValue) && decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalValue) => (int)decimal.Round(decimalValue, 0, MidpointRounding.AwayFromZero),
+            JsonValue value when value.TryGetValue<int>(out int intValue) => intValue,
+            JsonValue value when value.TryGetValue<string>(out string? stringValue) && decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal decimalValue) => (int)decimal.Round(decimalValue, 0, MidpointRounding.AwayFromZero),
             _ => null,
         };
     }
@@ -555,7 +543,7 @@ public sealed class OrderCreatedHandler
 
     private static Guid CreateDeterministicGuid(Guid seed, string purpose)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{seed:N}:{purpose}"));
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{seed:N}:{purpose}"));
         Span<byte> guidBytes = stackalloc byte[16];
         bytes[..16].CopyTo(guidBytes);
         return new Guid(guidBytes);
@@ -564,7 +552,7 @@ public sealed class OrderCreatedHandler
     private static OrderCommand ParseOrderCommand(ApplicationEventEnvelope envelope)
     {
         static string Require(IReadOnlyDictionary<string, string?> attributes, string key)
-            => attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            => attributes.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value)
                 ? value.Trim()
                 : throw new InvalidOperationException($"Order command is missing required attribute '{key}'.");
 
@@ -573,20 +561,20 @@ public sealed class OrderCreatedHandler
             TradeIntentId: Guid.Parse(Require(envelope.Attributes, "tradeIntentId")),
             Ticker: Require(envelope.Attributes, "ticker"),
             ActionType: Require(envelope.Attributes, "actionType"),
-            Side: envelope.Attributes.TryGetValue("side", out var side) ? side : null,
-            Quantity: envelope.Attributes.TryGetValue("quantity", out var quantity) && int.TryParse(quantity, out var parsedQuantity) ? parsedQuantity : null,
-            LimitPrice: envelope.Attributes.TryGetValue("limitPrice", out var limitPrice) && decimal.TryParse(limitPrice, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedLimitPrice) ? parsedLimitPrice : null,
+            Side: envelope.Attributes.TryGetValue("side", out string? side) ? side : null,
+            Quantity: envelope.Attributes.TryGetValue("quantity", out string? quantity) && int.TryParse(quantity, out int parsedQuantity) ? parsedQuantity : null,
+            LimitPrice: envelope.Attributes.TryGetValue("limitPrice", out string? limitPrice) && decimal.TryParse(limitPrice, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsedLimitPrice) ? parsedLimitPrice : null,
             CorrelationId: envelope.CorrelationId ?? Require(envelope.Attributes, "clientOrderId"),
             ClientOrderId: Require(envelope.Attributes, "clientOrderId"),
-            Subaccount: envelope.Attributes.TryGetValue("subaccount", out var subaccount) && int.TryParse(subaccount, out var parsedSubaccount) ? parsedSubaccount : 0,
-            TargetPublisherOrderId: envelope.Attributes.TryGetValue("targetPublisherOrderId", out var targetPublisherOrderId) && Guid.TryParse(targetPublisherOrderId, out var parsedTargetPublisherOrderId) ? parsedTargetPublisherOrderId : null,
-            TargetClientOrderId: envelope.Attributes.TryGetValue("targetClientOrderId", out var targetClientOrderId) ? targetClientOrderId : null,
-            TargetExternalOrderId: envelope.Attributes.TryGetValue("targetExternalOrderId", out var targetExternalOrderId) ? targetExternalOrderId : null);
+            Subaccount: envelope.Attributes.TryGetValue("subaccount", out string? subaccount) && int.TryParse(subaccount, out int parsedSubaccount) ? parsedSubaccount : 0,
+            TargetPublisherOrderId: envelope.Attributes.TryGetValue("targetPublisherOrderId", out string? targetPublisherOrderId) && Guid.TryParse(targetPublisherOrderId, out Guid parsedTargetPublisherOrderId) ? parsedTargetPublisherOrderId : null,
+            TargetClientOrderId: envelope.Attributes.TryGetValue("targetClientOrderId", out string? targetClientOrderId) ? targetClientOrderId : null,
+            TargetExternalOrderId: envelope.Attributes.TryGetValue("targetExternalOrderId", out string? targetExternalOrderId) ? targetExternalOrderId : null);
     }
 
     private async Task<ExecutionRecordEntity?> FindExecutionAsync(OrderCommand command, CancellationToken cancellationToken)
     {
-        var execution = await _dbContext.ExecutionRecords.SingleOrDefaultAsync(x => x.PublisherOrderId == command.PublisherOrderId, cancellationToken)
+        ExecutionRecordEntity? execution = await _dbContext.ExecutionRecords.SingleOrDefaultAsync(x => x.PublisherOrderId == command.PublisherOrderId, cancellationToken)
             ?? await _dbContext.ExecutionRecords.SingleOrDefaultAsync(x => x.ClientOrderId == command.ClientOrderId, cancellationToken);
 
         if (execution is not null)
@@ -594,7 +582,7 @@ public sealed class OrderCreatedHandler
             return execution;
         }
 
-        var mappedExecutionId = await _dbContext.ExternalOrderMappings
+        Guid? mappedExecutionId = await _dbContext.ExternalOrderMappings
             .AsNoTracking()
             .Where(x => x.PublisherOrderId == command.PublisherOrderId || x.ClientOrderId == command.ClientOrderId)
             .Select(x => (Guid?)x.ExecutionRecordId)

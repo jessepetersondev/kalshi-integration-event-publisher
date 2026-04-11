@@ -14,27 +14,21 @@ namespace Kalshi.Integration.Api.Controllers;
 /// Issues development authentication tokens for local and test environments where
 /// interactive identity infrastructure is not available.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="AuthController"/> class.
+/// </remarks>
+/// <param name="jwtOptions">The JWT settings used to issue development tokens.</param>
+/// <param name="environment">The current hosting environment.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [AllowAnonymous]
 [Route("api/v{version:apiVersion}/auth")]
-public sealed class AuthController : ControllerBase
+public sealed class AuthController(IOptions<JwtOptions> jwtOptions, IWebHostEnvironment environment) : ControllerBase
 {
     private static readonly string[] AllowedRoles = ["admin", "trader", "operator", "integration"];
 
-    private readonly JwtOptions _jwtOptions;
-    private readonly IWebHostEnvironment _environment;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AuthController"/> class.
-    /// </summary>
-    /// <param name="jwtOptions">The JWT settings used to issue development tokens.</param>
-    /// <param name="environment">The current hosting environment.</param>
-    public AuthController(IOptions<JwtOptions> jwtOptions, IWebHostEnvironment environment)
-    {
-        _jwtOptions = jwtOptions.Value;
-        _environment = environment;
-    }
+    private readonly JwtOptions _jwtOptions = jwtOptions.Value;
+    private readonly IWebHostEnvironment _environment = environment;
 
     /// <summary>
     /// Issues a short-lived development token when the environment or configuration allows it.
@@ -52,16 +46,16 @@ public sealed class AuthController : ControllerBase
             return NotFound();
         }
 
-        var requestedRoles = request?.Roles?.Where(role => !string.IsNullOrWhiteSpace(role))
+        string[]? requestedRoles = request?.Roles?.Where(role => !string.IsNullOrWhiteSpace(role))
             .Select(role => role.Trim().ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var roles = requestedRoles is { Length: > 0 }
+        string[] roles = requestedRoles is { Length: > 0 }
             ? requestedRoles
             : ["admin"];
 
-        var invalidRoles = roles.Except(AllowedRoles, StringComparer.Ordinal).ToArray();
+        string[] invalidRoles = roles.Except(AllowedRoles, StringComparer.Ordinal).ToArray();
         if (invalidRoles.Length > 0)
         {
             return Problem(
@@ -70,22 +64,21 @@ public sealed class AuthController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var issuer = _jwtOptions.Issuer;
-        var audience = _jwtOptions.Audience;
-        var signingKey = _jwtOptions.SigningKey ?? JwtOptions.DevelopmentSigningKey;
-        var tokenLifetimeMinutes = Math.Max(1, _jwtOptions.TokenLifetimeMinutes);
-        var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.AddMinutes(tokenLifetimeMinutes);
+        string issuer = _jwtOptions.Issuer;
+        string audience = _jwtOptions.Audience;
+        string signingKey = _jwtOptions.SigningKey ?? JwtOptions.DevelopmentSigningKey;
+        int tokenLifetimeMinutes = Math.Max(1, _jwtOptions.TokenLifetimeMinutes);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset expiresAt = now.AddMinutes(tokenLifetimeMinutes);
 
-        var claims = new List<Claim>
-        {
+        List<Claim> claims =
+        [
             new(JwtRegisteredClaimNames.Sub, string.IsNullOrWhiteSpace(request?.Subject) ? "local-dev-user" : request!.Subject.Trim()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
-        };
+            .. roles.Select(role => new Claim(ClaimTypes.Role, role)),
+        ];
 
-        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-
-        var tokenDescriptor = new SecurityTokenDescriptor
+        SecurityTokenDescriptor tokenDescriptor = new()
         {
             Subject = new ClaimsIdentity(claims),
             Issuer = issuer,
@@ -98,8 +91,8 @@ public sealed class AuthController : ControllerBase
                 SecurityAlgorithms.HmacSha256Signature),
         };
 
-        var handler = new JwtSecurityTokenHandler();
-        var token = handler.CreateToken(tokenDescriptor);
+        JwtSecurityTokenHandler handler = new();
+        SecurityToken token = handler.CreateToken(tokenDescriptor);
 
         return Ok(new DevTokenResponse(
             handler.WriteToken(token),

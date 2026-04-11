@@ -31,7 +31,7 @@ public static class RequestMetadata
     /// <returns>The resolved correlation identifier.</returns>
     public static string ResolveCorrelationId(HttpContext httpContext, string? requestCorrelationId = null)
     {
-        var correlationId = !string.IsNullOrWhiteSpace(requestCorrelationId)
+        string correlationId = !string.IsNullOrWhiteSpace(requestCorrelationId)
             ? requestCorrelationId.Trim()
             : TryReadHeader(httpContext, CorrelationIdHeaderName) ?? httpContext.TraceIdentifier;
 
@@ -47,7 +47,7 @@ public static class RequestMetadata
     /// <returns>The resolved idempotency key, or <see langword="null"/> when none is available.</returns>
     public static string? ResolveIdempotencyKey(HttpContext httpContext, string? fallback = null)
     {
-        var key = TryReadHeader(httpContext, IdempotencyKeyHeaderName);
+        string? key = TryReadHeader(httpContext, IdempotencyKeyHeaderName);
         if (string.IsNullOrWhiteSpace(key))
         {
             key = string.IsNullOrWhiteSpace(fallback) ? null : fallback.Trim();

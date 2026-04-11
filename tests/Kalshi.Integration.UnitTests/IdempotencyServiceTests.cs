@@ -8,10 +8,10 @@ public sealed class IdempotencyServiceTests
     [Fact]
     public async Task LookupAsync_ShouldReturnNoneWhenKeyMissing()
     {
-        var store = new InMemoryIdempotencyStore();
-        var service = new IdempotencyService(store);
+        InMemoryIdempotencyStore store = new();
+        IdempotencyService service = new(store);
 
-        var result = await service.LookupAsync("trade-intents", null, new { ticker = "KXBTC" });
+        IdempotencyLookupResult result = await service.LookupAsync("trade-intents", null, new { ticker = "KXBTC" });
 
         Assert.Equal(IdempotencyLookupStatus.None, result.Status);
         Assert.Null(result.Record);
@@ -20,11 +20,11 @@ public sealed class IdempotencyServiceTests
     [Fact]
     public async Task SaveResponseAsync_ShouldIgnoreBlankKeys()
     {
-        var store = new InMemoryIdempotencyStore();
-        var service = new IdempotencyService(store);
+        InMemoryIdempotencyStore store = new();
+        IdempotencyService service = new(store);
 
         await service.SaveResponseAsync("trade-intents", " ", new { ticker = "KXBTC" }, 201, new { id = Guid.NewGuid() });
-        var lookup = await store.GetAsync("trade-intents", "", CancellationToken.None);
+        IdempotencyRecord? lookup = await store.GetAsync("trade-intents", "", CancellationToken.None);
 
         Assert.Null(lookup);
     }
@@ -32,12 +32,12 @@ public sealed class IdempotencyServiceTests
     [Fact]
     public async Task LookupAsync_ShouldReplayWhenKeyAndPayloadMatchSavedResponse()
     {
-        var store = new InMemoryIdempotencyStore();
-        var service = new IdempotencyService(store);
+        InMemoryIdempotencyStore store = new();
+        IdempotencyService service = new(store);
         var request = new { ticker = "KXBTC", side = "yes", quantity = 1 };
 
         await service.SaveResponseAsync("trade-intents", " idem-1 ", request, 201, new { id = Guid.NewGuid(), ticker = "KXBTC" });
-        var result = await service.LookupAsync("trade-intents", "idem-1", request);
+        IdempotencyLookupResult result = await service.LookupAsync("trade-intents", "idem-1", request);
 
         Assert.Equal(IdempotencyLookupStatus.Replay, result.Status);
         Assert.NotNull(result.Record);
@@ -48,11 +48,11 @@ public sealed class IdempotencyServiceTests
     [Fact]
     public async Task LookupAsync_ShouldConflictWhenKeyMatchesButPayloadDiffers()
     {
-        var store = new InMemoryIdempotencyStore();
-        var service = new IdempotencyService(store);
+        InMemoryIdempotencyStore store = new();
+        IdempotencyService service = new(store);
 
         await service.SaveResponseAsync("orders", "idem-2", new { tradeIntentId = Guid.NewGuid() }, 201, new { id = Guid.NewGuid() });
-        var result = await service.LookupAsync("orders", "idem-2", new { tradeIntentId = Guid.NewGuid() });
+        IdempotencyLookupResult result = await service.LookupAsync("orders", "idem-2", new { tradeIntentId = Guid.NewGuid() });
 
         Assert.Equal(IdempotencyLookupStatus.Conflict, result.Status);
         Assert.NotNull(result.Record);

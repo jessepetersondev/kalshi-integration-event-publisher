@@ -9,19 +9,14 @@ namespace Kalshi.Integration.Application.Operations;
 /// Computes deterministic request hashes and stores replayable responses for endpoints
 /// that support idempotent writes.
 /// </summary>
-public sealed class IdempotencyService
+/// <remarks>
+/// Initializes a new instance of the <see cref="IdempotencyService"/> class.
+/// </remarks>
+/// <param name="store">The store used to persist idempotency fingerprints and replay payloads.</param>
+public sealed class IdempotencyService(IIdempotencyStore store)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly IIdempotencyStore _store;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="IdempotencyService"/> class.
-    /// </summary>
-    /// <param name="store">The store used to persist idempotency fingerprints and replay payloads.</param>
-    public IdempotencyService(IIdempotencyStore store)
-    {
-        _store = store;
-    }
+    private readonly IIdempotencyStore _store = store;
 
     public async Task<IdempotencyLookupResult> LookupAsync(string scope, string? key, object request, CancellationToken cancellationToken = default)
     {
@@ -30,9 +25,9 @@ public sealed class IdempotencyService
             return IdempotencyLookupResult.None;
         }
 
-        var normalizedKey = key.Trim();
-        var requestHash = ComputeRequestHash(request);
-        var existing = await _store.GetAsync(scope, normalizedKey, cancellationToken);
+        string normalizedKey = key.Trim();
+        string requestHash = ComputeRequestHash(request);
+        IdempotencyRecord? existing = await _store.GetAsync(scope, normalizedKey, cancellationToken);
         if (existing is null)
         {
             return IdempotencyLookupResult.None;
@@ -50,9 +45,9 @@ public sealed class IdempotencyService
             return;
         }
 
-        var normalizedKey = key.Trim();
-        var requestHash = ComputeRequestHash(request);
-        var responseBody = JsonSerializer.Serialize(response, SerializerOptions);
+        string normalizedKey = key.Trim();
+        string requestHash = ComputeRequestHash(request);
+        string responseBody = JsonSerializer.Serialize(response, SerializerOptions);
 
         await _store.SaveAsync(
             IdempotencyRecord.Create(scope, normalizedKey, requestHash, statusCode, responseBody),
@@ -61,8 +56,8 @@ public sealed class IdempotencyService
 
     private static string ComputeRequestHash(object request)
     {
-        var json = JsonSerializer.Serialize(request, SerializerOptions);
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        string json = JsonSerializer.Serialize(request, SerializerOptions);
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes);
     }
 }

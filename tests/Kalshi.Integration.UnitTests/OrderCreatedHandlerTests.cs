@@ -18,11 +18,11 @@ public sealed class OrderCreatedHandlerTests
     [Fact]
     public async Task HandleAsync_ShouldRecoverExistingExternalOrderByClientOrderIdWithoutPlacingDuplicateOrder()
     {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await using SqliteConnection connection = new("Data Source=:memory:");
         await connection.OpenAsync();
-        await using var dbContext = CreateDbContext(connection);
+        await using ExecutorDbContext dbContext = CreateDbContext(connection);
 
-        var apiClient = new Mock<IKalshiApiClient>(MockBehavior.Strict);
+        Mock<IKalshiApiClient> apiClient = new(MockBehavior.Strict);
         apiClient
             .Setup(x => x.GetOrdersAsync("KXBTC", 7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
@@ -39,7 +39,7 @@ public sealed class OrderCreatedHandlerTests
                 },
             });
 
-        var handler = new OrderCreatedHandler(
+        OrderCreatedHandler handler = new(
             dbContext,
             apiClient.Object,
             new RabbitMqResultEventPublisher(),
@@ -54,7 +54,7 @@ public sealed class OrderCreatedHandlerTests
             }),
             NullLogger<OrderCreatedHandler>.Instance);
 
-        var envelope = new ApplicationEventEnvelope(
+        ApplicationEventEnvelope envelope = new(
             Guid.NewGuid(),
             "trading",
             "order.created",
@@ -76,8 +76,8 @@ public sealed class OrderCreatedHandlerTests
 
         await handler.HandleAsync(envelope);
 
-        var execution = await dbContext.ExecutionRecords.SingleAsync();
-        var outboxMessage = await dbContext.OutboxMessages.SingleAsync(x => x.MessageType == "result");
+        Executor.Persistence.Entities.ExecutionRecordEntity execution = await dbContext.ExecutionRecords.SingleAsync();
+        Executor.Persistence.Entities.ExecutorOutboxMessageEntity outboxMessage = await dbContext.OutboxMessages.SingleAsync(x => x.MessageType == "result");
 
         Assert.Equal("ext-123", execution.ExternalOrderId);
         Assert.Equal("resting", execution.Status);
@@ -88,11 +88,11 @@ public sealed class OrderCreatedHandlerTests
     [Fact]
     public async Task HandleAsync_ShouldIgnoreReplayOfSameInboundCommandAfterSuccessfulPlacement()
     {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await using SqliteConnection connection = new("Data Source=:memory:");
         await connection.OpenAsync();
-        await using var dbContext = CreateDbContext(connection);
+        await using ExecutorDbContext dbContext = CreateDbContext(connection);
 
-        var apiClient = new Mock<IKalshiApiClient>(MockBehavior.Strict);
+        Mock<IKalshiApiClient> apiClient = new(MockBehavior.Strict);
         apiClient
             .Setup(x => x.GetOrdersAsync("KXBTC", 7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["orders"] = new JsonArray() });
@@ -109,7 +109,7 @@ public sealed class OrderCreatedHandlerTests
                 },
             });
 
-        var handler = new OrderCreatedHandler(
+        OrderCreatedHandler handler = new(
             dbContext,
             apiClient.Object,
             new RabbitMqResultEventPublisher(),
@@ -124,10 +124,10 @@ public sealed class OrderCreatedHandlerTests
             }),
             NullLogger<OrderCreatedHandler>.Instance);
 
-        var publisherOrderId = Guid.NewGuid();
-        var tradeIntentId = Guid.NewGuid();
-        var eventId = Guid.NewGuid();
-        var envelope = new ApplicationEventEnvelope(
+        Guid publisherOrderId = Guid.NewGuid();
+        Guid tradeIntentId = Guid.NewGuid();
+        Guid eventId = Guid.NewGuid();
+        ApplicationEventEnvelope envelope = new(
             eventId,
             "trading",
             "order.created",
@@ -159,11 +159,11 @@ public sealed class OrderCreatedHandlerTests
 
     private static ExecutorDbContext CreateDbContext(SqliteConnection connection)
     {
-        var options = new DbContextOptionsBuilder<ExecutorDbContext>()
+        DbContextOptions<ExecutorDbContext> options = new DbContextOptionsBuilder<ExecutorDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        var dbContext = new ExecutorDbContext(options);
+        ExecutorDbContext dbContext = new(options);
         dbContext.Database.EnsureCreated();
         return dbContext;
     }

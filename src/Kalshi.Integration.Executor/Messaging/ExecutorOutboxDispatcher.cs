@@ -12,41 +12,32 @@ using Microsoft.Extensions.Options;
 
 namespace Kalshi.Integration.Executor.Messaging;
 
-public sealed class ExecutorOutboxDispatcher
+public sealed class ExecutorOutboxDispatcher(
+    ExecutorDbContext dbContext,
+    IApplicationEventPublisher applicationEventPublisher,
+    ExecutorOperationalIssueRecorder issueRecorder,
+    IOptions<RabbitMqOptions> options,
+    ILogger<ExecutorOutboxDispatcher> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ExecutorDbContext _dbContext;
-    private readonly IApplicationEventPublisher _applicationEventPublisher;
-    private readonly ExecutorOperationalIssueRecorder _issueRecorder;
-    private readonly ILogger<ExecutorOutboxDispatcher> _logger;
-    private readonly RabbitMqOptions _options;
+    private readonly ExecutorDbContext _dbContext = dbContext;
+    private readonly IApplicationEventPublisher _applicationEventPublisher = applicationEventPublisher;
+    private readonly ExecutorOperationalIssueRecorder _issueRecorder = issueRecorder;
+    private readonly ILogger<ExecutorOutboxDispatcher> _logger = logger;
+    private readonly RabbitMqOptions _options = options.Value;
     private readonly string _processorId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
-
-    public ExecutorOutboxDispatcher(
-        ExecutorDbContext dbContext,
-        IApplicationEventPublisher applicationEventPublisher,
-        ExecutorOperationalIssueRecorder issueRecorder,
-        IOptions<RabbitMqOptions> options,
-        ILogger<ExecutorOutboxDispatcher> logger)
-    {
-        _dbContext = dbContext;
-        _applicationEventPublisher = applicationEventPublisher;
-        _issueRecorder = issueRecorder;
-        _options = options.Value;
-        _logger = logger;
-    }
 
     public async Task<int> DrainDueMessagesAsync(CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var expired = (await _dbContext.OutboxMessages
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        List<ExecutorOutboxMessageEntity> expired = (await _dbContext.OutboxMessages
             .Where(x => x.Status == OutboxMessageStatus.InFlight.ToString())
             .ToListAsync(cancellationToken))
             .Where(x => x.LeaseExpiresAt <= now)
             .ToList();
 
-        foreach (var message in expired)
+        foreach (ExecutorOutboxMessageEntity? message in expired)
         {
             message.Status = OutboxMessageStatus.Pending.ToString();
             message.ProcessorId = null;
@@ -55,7 +46,7 @@ public sealed class ExecutorOutboxDispatcher
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        var due = (await _dbContext.OutboxMessages
+        List<ExecutorOutboxMessageEntity> due = (await _dbContext.OutboxMessages
             .Where(x => x.Status == OutboxMessageStatus.Pending.ToString())
             .ToListAsync(cancellationToken))
             .Where(x => x.NextAttemptAt <= now)
@@ -64,7 +55,7 @@ public sealed class ExecutorOutboxDispatcher
             .Take(_options.OutboxBatchSize)
             .ToList();
 
-        foreach (var message in due)
+        foreach (ExecutorOutboxMessageEntity? message in due)
         {
             message.Status = OutboxMessageStatus.InFlight.ToString();
             message.ProcessorId = _processorId;
@@ -73,7 +64,7 @@ public sealed class ExecutorOutboxDispatcher
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        foreach (var message in due)
+        foreach (ExecutorOutboxMessageEntity? message in due)
         {
             await ProcessAsync(message, cancellationToken);
         }
@@ -83,12 +74,12 @@ public sealed class ExecutorOutboxDispatcher
 
     private async Task ProcessAsync(ExecutorOutboxMessageEntity message, CancellationToken cancellationToken)
     {
-        var attemptNumber = message.AttemptCount + 1;
-        var attemptedAt = DateTimeOffset.UtcNow;
+        int attemptNumber = message.AttemptCount + 1;
+        DateTimeOffset attemptedAt = DateTimeOffset.UtcNow;
 
         try
         {
-            var envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(message.PayloadJson, SerializerOptions)
+            ApplicationEventEnvelope envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(message.PayloadJson, SerializerOptions)
                 ?? throw new InvalidOperationException($"Executor outbox message '{message.Id}' payload could not be deserialized.");
 
             await _applicationEventPublisher.PublishAsync(envelope, cancellationToken);
@@ -111,7 +102,7 @@ public sealed class ExecutorOutboxDispatcher
                 OccurredAt = attemptedAt,
             });
 
-            var execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == message.ExecutionRecordId, cancellationToken);
+            ExecutionRecordEntity execution = await _dbContext.ExecutionRecords.SingleAsync(x => x.Id == message.ExecutionRecordId, cancellationToken);
             if (message.MessageType == "result")
             {
                 execution.TerminalResultPublishedAt ??= message.PublishedAt;
@@ -125,7 +116,7 @@ public sealed class ExecutorOutboxDispatcher
             message.AttemptCount = attemptNumber;
             message.LastAttemptAt = attemptedAt;
             message.LastError = exception.Message;
-            var failureKind = ClassifyFailure(exception);
+            string failureKind = ClassifyFailure(exception);
             message.LastFailureKind = failureKind;
 
             _dbContext.OutboxAttempts.Add(new ExecutorOutboxAttemptEntity
@@ -178,11 +169,11 @@ public sealed class ExecutorOutboxDispatcher
 
     private TimeSpan CalculateRetryDelay(int attemptNumber)
     {
-        var exponent = Math.Max(0, attemptNumber - 1);
-        var baseDelay = Math.Min(
+        int exponent = Math.Max(0, attemptNumber - 1);
+        double baseDelay = Math.Min(
             _options.OutboxMaxRetryDelayMilliseconds,
             _options.OutboxInitialRetryDelayMilliseconds * Math.Pow(2, exponent));
-        var jitter = _options.OutboxJitterMaxMilliseconds <= 0
+        int jitter = _options.OutboxJitterMaxMilliseconds <= 0
             ? 0
             : Random.Shared.Next(0, _options.OutboxJitterMaxMilliseconds + 1);
         return TimeSpan.FromMilliseconds(baseDelay + jitter);

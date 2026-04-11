@@ -32,8 +32,8 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task ProtectedEndpoints_ShouldRequireAuthentication()
     {
-        var dashboardResponse = await _anonymousClient.GetAsync("/api/v1/dashboard/orders");
-        var nodeGatewayResponse = await _anonymousClient.GetAsync("/api/v1/system/dependencies/node-gateway");
+        HttpResponseMessage dashboardResponse = await _anonymousClient.GetAsync("/api/v1/dashboard/orders");
+        HttpResponseMessage nodeGatewayResponse = await _anonymousClient.GetAsync("/api/v1/system/dependencies/node-gateway");
 
         Assert.Equal(HttpStatusCode.Unauthorized, dashboardResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, nodeGatewayResponse.StatusCode);
@@ -42,17 +42,17 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task ProtectedEndpoints_ShouldRejectUsersWithoutRequiredRole()
     {
-        using var client = _factory.CreateAuthenticatedClient("integration");
-        var response = await client.GetAsync("/api/v1/dashboard/orders");
+        using HttpClient client = _factory.CreateAuthenticatedClient("integration");
+        HttpResponseMessage response = await client.GetAsync("/api/v1/dashboard/orders");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task PublicEndpoints_ShouldRemainAvailableWithoutAuthentication()
     {
-        var pingResponse = await _anonymousClient.GetAsync("/api/v1/system/ping");
-        var liveResponse = await _anonymousClient.GetAsync("/health/live");
-        var readyResponse = await _anonymousClient.GetAsync("/health/ready");
+        HttpResponseMessage pingResponse = await _anonymousClient.GetAsync("/api/v1/system/ping");
+        HttpResponseMessage liveResponse = await _anonymousClient.GetAsync("/health/live");
+        HttpResponseMessage readyResponse = await _anonymousClient.GetAsync("/health/ready");
 
         pingResponse.EnsureSuccessStatusCode();
         liveResponse.EnsureSuccessStatusCode();
@@ -62,17 +62,17 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task Swagger_ShouldBeDisabledOutsideDevelopmentByDefault()
     {
-        var response = await _anonymousClient.GetAsync("/swagger/v1/swagger.json");
+        HttpResponseMessage response = await _anonymousClient.GetAsync("/swagger/v1/swagger.json");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task DevelopmentTokenEndpoint_ShouldIssueJwtForRequestedRoles()
     {
-        var response = await _anonymousClient.PostAsJsonAsync("/api/v1/auth/dev-token", new { roles = new[] { "operator" }, subject = "local-docs-user" });
+        HttpResponseMessage response = await _anonymousClient.PostAsJsonAsync("/api/v1/auth/dev-token", new { roles = new[] { "operator" }, subject = "local-docs-user" });
         response.EnsureSuccessStatusCode();
 
-        var payload = await response.Content.ReadFromJsonAsync<DevTokenEnvelope>();
+        DevTokenEnvelope? payload = await response.Content.ReadFromJsonAsync<DevTokenEnvelope>();
         Assert.NotNull(payload);
         Assert.Contains("operator", payload!.Roles);
         Assert.False(string.IsNullOrWhiteSpace(payload.AccessToken));
@@ -81,10 +81,10 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task PostTradeIntent_ShouldCreateTradeIntent()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-TEST", "yes", 2, 0.45m, "Breakout", null));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-TEST", "yes", 2, 0.45m, "Breakout", null));
         response.EnsureSuccessStatusCode();
 
-        var payload = await response.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? payload = await response.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(payload);
@@ -94,46 +94,46 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task PostTradeIntent_ShouldReturnBadRequestForInvalidInput()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("", "yes", 0, 0m, "", null));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("", "yes", 0, 0m, "", null));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task PostTradeIntent_ShouldRejectOversizedOrders()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-BIG", "yes", 99, 0.45m, "Breakout", "oversized-1"));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-BIG", "yes", 99, 0.45m, "Breakout", "oversized-1"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task PostTradeIntent_ShouldRejectDuplicateCorrelationIds()
     {
-        var correlationId = $"dup-{Guid.NewGuid():N}";
+        string correlationId = $"dup-{Guid.NewGuid():N}";
 
-        var first = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-DUP", "yes", 1, 0.45m, "Breakout", correlationId));
+        HttpResponseMessage first = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-DUP", "yes", 1, 0.45m, "Breakout", correlationId));
         first.EnsureSuccessStatusCode();
 
-        var second = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-DUP", "no", 1, 0.55m, "Fade", correlationId));
+        HttpResponseMessage second = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-DUP", "no", 1, 0.55m, "Fade", correlationId));
         Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
     }
 
     [Fact]
     public async Task PostOrder_ShouldRejectDuplicateOrderForSameTradeIntent()
     {
-        var tradeIntentResponse = await _client.PostAsJsonAsync(
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync(
             "/api/v1/trade-intents",
             new CreateTradeIntentRequest("KXBTC-DUP-ORDER", "yes", 1, 0.45m, "Breakout", $"dup-order-{Guid.NewGuid():N}"));
         tradeIntentResponse.EnsureSuccessStatusCode();
 
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
-        var first = await PostJsonWithHeadersAsync(
+        HttpResponseMessage first = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent!.Id),
             ("idempotency-key", $"order-key-{Guid.NewGuid():N}"));
         first.EnsureSuccessStatusCode();
 
-        var second = await PostJsonWithHeadersAsync(
+        HttpResponseMessage second = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent.Id),
             ("idempotency-key", $"order-key-{Guid.NewGuid():N}"));
@@ -144,19 +144,19 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task PostTradeIntent_ShouldReplayDuplicateIdempotencyKey()
     {
-        var ticker = $"KXBTC-IDEMP-{Guid.NewGuid():N}".ToUpperInvariant();
-        var idempotencyKey = $"trade-intent-{Guid.NewGuid():N}";
-        var firstCorrelationId = $"corr-{Guid.NewGuid():N}";
-        var secondCorrelationId = $"corr-{Guid.NewGuid():N}";
-        var payload = new CreateTradeIntentRequest(ticker, "yes", 2, 0.45m, "Idempotent", null);
+        string ticker = $"KXBTC-IDEMP-{Guid.NewGuid():N}".ToUpperInvariant();
+        string idempotencyKey = $"trade-intent-{Guid.NewGuid():N}";
+        string firstCorrelationId = $"corr-{Guid.NewGuid():N}";
+        string secondCorrelationId = $"corr-{Guid.NewGuid():N}";
+        CreateTradeIntentRequest payload = new(ticker, "yes", 2, 0.45m, "Idempotent", null);
 
-        var first = await PostJsonWithHeadersAsync(
+        HttpResponseMessage first = await PostJsonWithHeadersAsync(
             "/api/v1/trade-intents",
             payload,
             ("idempotency-key", idempotencyKey),
             ("x-correlation-id", firstCorrelationId));
 
-        var second = await PostJsonWithHeadersAsync(
+        HttpResponseMessage second = await PostJsonWithHeadersAsync(
             "/api/v1/trade-intents",
             payload,
             ("idempotency-key", idempotencyKey),
@@ -165,8 +165,8 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
         first.EnsureSuccessStatusCode();
         second.EnsureSuccessStatusCode();
 
-        var firstBody = await first.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var secondBody = await second.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? firstBody = await first.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? secondBody = await second.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         Assert.Equal(firstBody!.Id, secondBody!.Id);
@@ -178,14 +178,14 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task HealthEndpoints_ShouldExposeLivenessAndReadinessChecks()
     {
-        var liveResponse = await _client.GetAsync("/health/live");
-        var readyResponse = await _client.GetAsync("/health/ready");
+        HttpResponseMessage liveResponse = await _client.GetAsync("/health/live");
+        HttpResponseMessage readyResponse = await _client.GetAsync("/health/ready");
 
         liveResponse.EnsureSuccessStatusCode();
         readyResponse.EnsureSuccessStatusCode();
 
-        var liveBody = await liveResponse.Content.ReadAsStringAsync();
-        var readyBody = await readyResponse.Content.ReadAsStringAsync();
+        string liveBody = await liveResponse.Content.ReadAsStringAsync();
+        string readyBody = await readyResponse.Content.ReadAsStringAsync();
 
         Assert.Contains("\"status\": \"Healthy\"", liveBody, StringComparison.Ordinal);
         Assert.Contains("\"self\"", liveBody, StringComparison.Ordinal);
@@ -199,10 +199,10 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task RiskValidate_ShouldReturnExplicitDecisionOutput()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/risk/validate", new CreateTradeIntentRequest("KXBTC-RISK", "yes", 2, 0.44m, "Check", "risk-1"));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/risk/validate", new CreateTradeIntentRequest("KXBTC-RISK", "yes", 2, 0.44m, "Check", "risk-1"));
         response.EnsureSuccessStatusCode();
 
-        var payload = await response.Content.ReadFromJsonAsync<RiskDecisionResponse>();
+        RiskDecisionResponse? payload = await response.Content.ReadFromJsonAsync<RiskDecisionResponse>();
         Assert.NotNull(payload);
         Assert.True(payload!.Accepted);
         Assert.Equal("accepted", payload.Decision);
@@ -211,20 +211,20 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task OrderFlow_ShouldCreateOrderAndReturnItById()
     {
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-TEST2", "no", 1, 0.55m, "Fade", null));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-TEST2", "no", 1, 0.55m, "Fade", null));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
         createOrderResponse.EnsureSuccessStatusCode();
 
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
         Assert.NotNull(order);
         Assert.Equal(HttpStatusCode.Created, createOrderResponse.StatusCode);
 
-        var lookup = await _client.GetAsync($"/api/v1/orders/{order!.Id}");
+        HttpResponseMessage lookup = await _client.GetAsync($"/api/v1/orders/{order!.Id}");
         lookup.EnsureSuccessStatusCode();
 
-        var fetched = await lookup.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? fetched = await lookup.Content.ReadFromJsonAsync<OrderResponse>();
         Assert.NotNull(fetched);
         Assert.Equal(order.Id, fetched!.Id);
         Assert.Single(fetched.Events);
@@ -233,10 +233,10 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task OrderOutcomesEndpoint_ShouldReturnPublisherOwnedExecutionOutcomeState()
     {
-        var correlationId = $"outcome-{Guid.NewGuid():N}";
-        var ticker = $"KXBTC-OUTCOME-{Guid.NewGuid():N}".ToUpperInvariant();
+        string correlationId = $"outcome-{Guid.NewGuid():N}";
+        string ticker = $"KXBTC-OUTCOME-{Guid.NewGuid():N}".ToUpperInvariant();
 
-        var tradeIntentResponse = await _client.PostAsJsonAsync(
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync(
             "/api/v1/trade-intents",
             new CreateTradeIntentRequest(
                 ticker,
@@ -248,15 +248,15 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
                 OriginService: "weather-quant"));
         tradeIntentResponse.EnsureSuccessStatusCode();
 
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
         createOrderResponse.EnsureSuccessStatusCode();
-        var createdOrder = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? createdOrder = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        using (var scope = _factory.Services.CreateScope())
+        using (IServiceScope scope = _factory.Services.CreateScope())
         {
-            var tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
-            var resultEvent = ApplicationEventEnvelope.Create(
+            TradingService tradingService = scope.ServiceProvider.GetRequiredService<TradingService>();
+            ApplicationEventEnvelope resultEvent = ApplicationEventEnvelope.Create(
                 category: "integration",
                 name: "order.execution_succeeded",
                 resourceId: createdOrder!.Id.ToString(),
@@ -270,15 +270,15 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
                 },
                 occurredAt: DateTimeOffset.UtcNow.AddSeconds(1));
 
-            var applied = await tradingService.ApplyExecutorResultAsync(resultEvent);
+            bool applied = await tradingService.ApplyExecutorResultAsync(resultEvent);
             Assert.True(applied);
         }
 
-        var outcomes = await _client.GetFromJsonAsync<List<OrderOutcomeResponse>>(
+        List<OrderOutcomeResponse>? outcomes = await _client.GetFromJsonAsync<List<OrderOutcomeResponse>>(
             $"/api/v1/orders/outcomes?correlationId={Uri.EscapeDataString(correlationId)}&originService=weather-quant&outcomeState=succeeded&limit=10");
 
         Assert.NotNull(outcomes);
-        var outcome = Assert.Single(outcomes!);
+        OrderOutcomeResponse outcome = Assert.Single(outcomes!);
         Assert.Equal(createdOrder!.Id, outcome.Id);
         Assert.Equal("weather-quant", outcome.OriginService);
         Assert.Equal("succeeded", outcome.OutcomeState);
@@ -290,18 +290,18 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task PostOrder_ShouldReplayDuplicateIdempotencyKeyWithoutCreatingSecondOrder()
     {
-        var ticker = $"KXBTC-ORDER-{Guid.NewGuid():N}".ToUpperInvariant();
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "no", 1, 0.58m, "OrderReplay", $"order-intent-{Guid.NewGuid():N}"));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var idempotencyKey = $"order-{Guid.NewGuid():N}";
+        string ticker = $"KXBTC-ORDER-{Guid.NewGuid():N}".ToUpperInvariant();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "no", 1, 0.58m, "OrderReplay", $"order-intent-{Guid.NewGuid():N}"));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        string idempotencyKey = $"order-{Guid.NewGuid():N}";
 
-        var first = await PostJsonWithHeadersAsync(
+        HttpResponseMessage first = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent!.Id),
             ("idempotency-key", idempotencyKey),
             ("x-correlation-id", $"corr-{Guid.NewGuid():N}"));
 
-        var second = await PostJsonWithHeadersAsync(
+        HttpResponseMessage second = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent.Id),
             ("idempotency-key", idempotencyKey),
@@ -310,9 +310,9 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
         first.EnsureSuccessStatusCode();
         second.EnsureSuccessStatusCode();
 
-        var firstBody = await first.Content.ReadFromJsonAsync<OrderResponse>();
-        var secondBody = await second.Content.ReadFromJsonAsync<OrderResponse>();
-        var orders = await _client.GetFromJsonAsync<List<DashboardOrderSummaryResponse>>("/api/v1/dashboard/orders");
+        OrderResponse? firstBody = await first.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? secondBody = await second.Content.ReadFromJsonAsync<OrderResponse>();
+        List<DashboardOrderSummaryResponse>? orders = await _client.GetFromJsonAsync<List<DashboardOrderSummaryResponse>>("/api/v1/dashboard/orders");
 
         Assert.NotNull(firstBody);
         Assert.NotNull(secondBody);
@@ -325,40 +325,40 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task ApplicationEvents_ShouldPublishForSuccessfulTradeIntentOrderAndExecutionUpdateFlows()
     {
-        var ticker = $"KXBTC-PUB-{Guid.NewGuid():N}".ToUpperInvariant();
-        var tradeCorrelationId = $"trade-pub-{Guid.NewGuid():N}";
-        var orderCorrelationId = $"order-pub-{Guid.NewGuid():N}";
-        var executionCorrelationId = $"exec-pub-{Guid.NewGuid():N}";
+        string ticker = $"KXBTC-PUB-{Guid.NewGuid():N}".ToUpperInvariant();
+        string tradeCorrelationId = $"trade-pub-{Guid.NewGuid():N}";
+        string orderCorrelationId = $"order-pub-{Guid.NewGuid():N}";
+        string executionCorrelationId = $"exec-pub-{Guid.NewGuid():N}";
 
-        var tradeIntentResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage tradeIntentResponse = await PostJsonWithHeadersAsync(
             "/api/v1/trade-intents",
             new CreateTradeIntentRequest(ticker, "yes", 2, 0.48m, "Publisher", null),
             ("x-correlation-id", tradeCorrelationId),
             ("idempotency-key", $"trade-key-{Guid.NewGuid():N}"));
         tradeIntentResponse.EnsureSuccessStatusCode();
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
-        var orderResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage orderResponse = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent!.Id),
             ("x-correlation-id", orderCorrelationId),
             ("idempotency-key", $"order-key-{Guid.NewGuid():N}"));
         orderResponse.EnsureSuccessStatusCode();
-        var order = await orderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? order = await orderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var executionResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage executionResponse = await PostJsonWithHeadersAsync(
             "/api/v1/integrations/execution-updates",
             new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, executionCorrelationId));
         executionResponse.EnsureSuccessStatusCode();
 
-        var publishedEvents = _applicationEventPublisher.GetPublishedEvents();
+        IReadOnlyList<ApplicationEventEnvelope> publishedEvents = _applicationEventPublisher.GetPublishedEvents();
         Assert.Equal(3, publishedEvents.Count);
 
         Assert.Contains(publishedEvents, applicationEvent =>
             applicationEvent.Name == "trade-intent.created"
             && applicationEvent.CorrelationId == tradeCorrelationId
             && applicationEvent.ResourceId == tradeIntent.Id.ToString()
-            && applicationEvent.Attributes.TryGetValue("ticker", out var tickerValue)
+            && applicationEvent.Attributes.TryGetValue("ticker", out string? tickerValue)
             && tickerValue == ticker);
 
         Assert.Contains(publishedEvents, applicationEvent =>
@@ -375,23 +375,23 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task GetOrder_ShouldReturnNotFoundForUnknownOrder()
     {
-        var response = await _client.GetAsync($"/api/v1/orders/{Guid.NewGuid()}");
+        HttpResponseMessage response = await _client.GetAsync($"/api/v1/orders/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task ExecutionUpdate_ShouldApplyStateTransitionAndAppendHistory()
     {
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-EXEC", "yes", 3, 0.47m, "Exec", null));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-EXEC", "yes", 3, 0.47m, "Exec", null));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, "corr-a"));
-        var response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order.Id, "partially_filled", 2, DateTimeOffset.UtcNow.AddSeconds(1), "corr-b"));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order.Id, "partially_filled", 2, DateTimeOffset.UtcNow.AddSeconds(1), "corr-b"));
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        var lookup = await _client.GetFromJsonAsync<OrderResponse>($"/api/v1/orders/{order.Id}");
+        OrderResponse? lookup = await _client.GetFromJsonAsync<OrderResponse>($"/api/v1/orders/{order.Id}");
         Assert.NotNull(lookup);
         Assert.Equal("partiallyfilled", lookup!.Status);
         Assert.Equal(2, lookup.FilledQuantity);
@@ -401,25 +401,25 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task ExecutionUpdate_ShouldReplayRetriedInboundEventSafely()
     {
-        var ticker = $"KXBTC-RETRY-{Guid.NewGuid():N}".ToUpperInvariant();
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "yes", 3, 0.47m, "Retry", $"retry-intent-{Guid.NewGuid():N}"));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        string ticker = $"KXBTC-RETRY-{Guid.NewGuid():N}".ToUpperInvariant();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "yes", 3, 0.47m, "Retry", $"retry-intent-{Guid.NewGuid():N}"));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, $"accept-{Guid.NewGuid():N}"));
 
-        var correlationId = $"event-{Guid.NewGuid():N}";
-        var request = new ExecutionUpdateRequest(order.Id, "partially_filled", 2, DateTimeOffset.UtcNow.AddSeconds(1), correlationId);
+        string correlationId = $"event-{Guid.NewGuid():N}";
+        ExecutionUpdateRequest request = new(order.Id, "partially_filled", 2, DateTimeOffset.UtcNow.AddSeconds(1), correlationId);
 
-        var first = await PostJsonWithHeadersAsync("/api/v1/integrations/execution-updates", request);
-        var second = await PostJsonWithHeadersAsync("/api/v1/integrations/execution-updates", request);
+        HttpResponseMessage first = await PostJsonWithHeadersAsync("/api/v1/integrations/execution-updates", request);
+        HttpResponseMessage second = await PostJsonWithHeadersAsync("/api/v1/integrations/execution-updates", request);
 
         first.EnsureSuccessStatusCode();
         second.EnsureSuccessStatusCode();
 
-        var lookup = await _client.GetFromJsonAsync<OrderResponse>($"/api/v1/orders/{order.Id}");
-        var publishedEvents = _applicationEventPublisher.GetPublishedEvents();
+        OrderResponse? lookup = await _client.GetFromJsonAsync<OrderResponse>($"/api/v1/orders/{order.Id}");
+        IReadOnlyList<ApplicationEventEnvelope> publishedEvents = _applicationEventPublisher.GetPublishedEvents();
 
         Assert.NotNull(lookup);
         Assert.Equal(HttpStatusCode.Accepted, second.StatusCode);
@@ -436,42 +436,42 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task ExecutionUpdate_ShouldReturnBadRequestForIllegalTransition()
     {
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-ILLEGAL", "yes", 1, 0.44m, "Exec", null));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-ILLEGAL", "yes", 1, 0.44m, "Exec", null));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, "corr-c"));
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, "corr-c"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPositions_ShouldReturnUpdatedSnapshotsAfterExecution()
     {
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-POS", "yes", 4, 0.60m, "Trend", null));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-POS", "yes", 4, 0.60m, "Trend", null));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, "corr-d"));
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order.Id, "partially_filled", 2, DateTimeOffset.UtcNow.AddSeconds(1), "corr-e"));
 
-        var response = await _client.GetAsync("/api/v1/positions");
+        HttpResponseMessage response = await _client.GetAsync("/api/v1/positions");
         response.EnsureSuccessStatusCode();
 
-        var positions = await response.Content.ReadFromJsonAsync<List<PositionResponse>>();
+        List<PositionResponse>? positions = await response.Content.ReadFromJsonAsync<List<PositionResponse>>();
         Assert.NotNull(positions);
-        var position = Assert.Single(positions!.Where(position => position.Ticker == "KXBTC-POS"));
+        PositionResponse position = Assert.Single(positions!.Where(position => position.Ticker == "KXBTC-POS"));
         Assert.Equal(2, position.Contracts);
     }
 
     [Fact]
     public async Task Dashboard_ShouldServeStaticShell()
     {
-        var response = await _client.GetAsync("/dashboard");
+        HttpResponseMessage response = await _client.GetAsync("/dashboard");
         response.EnsureSuccessStatusCode();
 
-        var html = await response.Content.ReadAsStringAsync();
+        string html = await response.Content.ReadAsStringAsync();
         Assert.Contains("Operator Dashboard", html);
         Assert.Contains("Execution Outcomes", html);
         Assert.Contains("Audit Trail", html);
@@ -482,28 +482,28 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task DashboardEndpoints_ShouldReturnOrdersPositionsAndEvents()
     {
-        var ticker = $"KXBTC-DASH-{Guid.NewGuid():N}".ToUpperInvariant();
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "yes", 5, 0.51m, "Dashboard", $"dash-{Guid.NewGuid():N}"));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        string ticker = $"KXBTC-DASH-{Guid.NewGuid():N}".ToUpperInvariant();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest(ticker, "yes", 5, 0.51m, "Dashboard", $"dash-{Guid.NewGuid():N}"));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, $"exec-{Guid.NewGuid():N}"));
         await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order.Id, "partially_filled", 3, DateTimeOffset.UtcNow.AddSeconds(1), $"exec-{Guid.NewGuid():N}"));
 
-        var orders = await _client.GetFromJsonAsync<List<DashboardOrderSummaryResponse>>("/api/v1/dashboard/orders");
-        var positions = await _client.GetFromJsonAsync<List<PositionResponse>>("/api/v1/dashboard/positions");
-        var events = await _client.GetFromJsonAsync<List<DashboardEventResponse>>("/api/v1/dashboard/events?limit=20");
+        List<DashboardOrderSummaryResponse>? orders = await _client.GetFromJsonAsync<List<DashboardOrderSummaryResponse>>("/api/v1/dashboard/orders");
+        List<PositionResponse>? positions = await _client.GetFromJsonAsync<List<PositionResponse>>("/api/v1/dashboard/positions");
+        List<DashboardEventResponse>? events = await _client.GetFromJsonAsync<List<DashboardEventResponse>>("/api/v1/dashboard/events?limit=20");
 
         Assert.NotNull(orders);
         Assert.NotNull(positions);
         Assert.NotNull(events);
 
-        var dashboardOrder = Assert.Single(orders!.Where(item => item.Ticker == ticker));
+        DashboardOrderSummaryResponse dashboardOrder = Assert.Single(orders!.Where(item => item.Ticker == ticker));
         Assert.Equal("partiallyfilled", dashboardOrder.Status);
         Assert.Equal(3, dashboardOrder.FilledQuantity);
 
-        var position = Assert.Single(positions!.Where(item => item.Ticker == ticker));
+        PositionResponse position = Assert.Single(positions!.Where(item => item.Ticker == ticker));
         Assert.Equal(3, position.Contracts);
 
         Assert.Contains(events!, item => item.OrderId == order.Id && item.Status == "partiallyfilled" && item.FilledQuantity == 3);
@@ -512,37 +512,37 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task DashboardAuditRecords_ShouldExposeCorrelationAndIdempotencyMetadata()
     {
-        var ticker = $"KXBTC-AUDIT-{Guid.NewGuid():N}".ToUpperInvariant();
-        var tradeIntentCorrelationId = $"trade-corr-{Guid.NewGuid():N}";
-        var tradeIntentIdempotencyKey = $"trade-key-{Guid.NewGuid():N}";
-        var orderCorrelationId = $"order-corr-{Guid.NewGuid():N}";
-        var orderIdempotencyKey = $"order-key-{Guid.NewGuid():N}";
-        var executionCorrelationId = $"exec-corr-{Guid.NewGuid():N}";
+        string ticker = $"KXBTC-AUDIT-{Guid.NewGuid():N}".ToUpperInvariant();
+        string tradeIntentCorrelationId = $"trade-corr-{Guid.NewGuid():N}";
+        string tradeIntentIdempotencyKey = $"trade-key-{Guid.NewGuid():N}";
+        string orderCorrelationId = $"order-corr-{Guid.NewGuid():N}";
+        string orderIdempotencyKey = $"order-key-{Guid.NewGuid():N}";
+        string executionCorrelationId = $"exec-corr-{Guid.NewGuid():N}";
 
-        var tradeIntentResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage tradeIntentResponse = await PostJsonWithHeadersAsync(
             "/api/v1/trade-intents",
             new CreateTradeIntentRequest(ticker, "yes", 2, 0.49m, "Audit", null),
             ("idempotency-key", tradeIntentIdempotencyKey),
             ("x-correlation-id", tradeIntentCorrelationId));
         tradeIntentResponse.EnsureSuccessStatusCode();
 
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
 
-        var orderResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage orderResponse = await PostJsonWithHeadersAsync(
             "/api/v1/orders",
             new CreateOrderRequest(tradeIntent!.Id),
             ("idempotency-key", orderIdempotencyKey),
             ("x-correlation-id", orderCorrelationId));
         orderResponse.EnsureSuccessStatusCode();
 
-        var order = await orderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        OrderResponse? order = await orderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var executionUpdateResponse = await PostJsonWithHeadersAsync(
+        HttpResponseMessage executionUpdateResponse = await PostJsonWithHeadersAsync(
             "/api/v1/integrations/execution-updates",
             new ExecutionUpdateRequest(order!.Id, "accepted", 0, DateTimeOffset.UtcNow, executionCorrelationId));
         executionUpdateResponse.EnsureSuccessStatusCode();
 
-        var auditRecords = await _client.GetFromJsonAsync<List<DashboardAuditRecordResponse>>("/api/v1/dashboard/audit-records?hours=168&limit=200");
+        List<DashboardAuditRecordResponse>? auditRecords = await _client.GetFromJsonAsync<List<DashboardAuditRecordResponse>>("/api/v1/dashboard/audit-records?hours=168&limit=200");
         Assert.NotNull(auditRecords);
 
         Assert.Contains(auditRecords!, record =>
@@ -566,20 +566,20 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
     [Fact]
     public async Task DashboardIssues_ShouldExposeValidationAndIntegrationFailures()
     {
-        var validationCorrelationId = $"validation-{Guid.NewGuid():N}";
-        var validationResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-INVALID", "yes", 99, 0.45m, "Validation", validationCorrelationId));
+        string validationCorrelationId = $"validation-{Guid.NewGuid():N}";
+        HttpResponseMessage validationResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-INVALID", "yes", 99, 0.45m, "Validation", validationCorrelationId));
         Assert.Equal(HttpStatusCode.BadRequest, validationResponse.StatusCode);
 
-        var tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-ISSUES", "yes", 1, 0.52m, "Issues", $"issue-{Guid.NewGuid():N}"));
-        var tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
-        var createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
-        var order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
+        HttpResponseMessage tradeIntentResponse = await _client.PostAsJsonAsync("/api/v1/trade-intents", new CreateTradeIntentRequest("KXBTC-ISSUES", "yes", 1, 0.52m, "Issues", $"issue-{Guid.NewGuid():N}"));
+        TradeIntentResponse? tradeIntent = await tradeIntentResponse.Content.ReadFromJsonAsync<TradeIntentResponse>();
+        HttpResponseMessage createOrderResponse = await _client.PostAsJsonAsync("/api/v1/orders", new CreateOrderRequest(tradeIntent!.Id));
+        OrderResponse? order = await createOrderResponse.Content.ReadFromJsonAsync<OrderResponse>();
 
-        var integrationResponse = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, $"bad-exec-{Guid.NewGuid():N}"));
+        HttpResponseMessage integrationResponse = await _client.PostAsJsonAsync("/api/v1/integrations/execution-updates", new ExecutionUpdateRequest(order!.Id, "settled", 0, DateTimeOffset.UtcNow, $"bad-exec-{Guid.NewGuid():N}"));
         Assert.Equal(HttpStatusCode.BadRequest, integrationResponse.StatusCode);
 
-        var validationIssues = await _client.GetFromJsonAsync<List<DashboardIssueResponse>>("/api/v1/dashboard/issues?category=validation&hours=168");
-        var integrationIssues = await _client.GetFromJsonAsync<List<DashboardIssueResponse>>("/api/v1/dashboard/issues?category=integration&hours=168");
+        List<DashboardIssueResponse>? validationIssues = await _client.GetFromJsonAsync<List<DashboardIssueResponse>>("/api/v1/dashboard/issues?category=validation&hours=168");
+        List<DashboardIssueResponse>? integrationIssues = await _client.GetFromJsonAsync<List<DashboardIssueResponse>>("/api/v1/dashboard/issues?category=integration&hours=168");
 
         Assert.NotNull(validationIssues);
         Assert.NotNull(integrationIssues);
@@ -589,12 +589,12 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
 
     private async Task<HttpResponseMessage> PostJsonWithHeadersAsync<T>(string url, T payload, params (string Name, string Value)[] headers)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        using HttpRequestMessage request = new(HttpMethod.Post, url)
         {
             Content = JsonContent.Create(payload),
         };
 
-        foreach (var (name, value) in headers)
+        foreach ((string name, string value) in headers)
         {
             request.Headers.TryAddWithoutValidation(name, value);
         }
@@ -604,7 +604,7 @@ public sealed class ApiEndpointIntegrationTests : IClassFixture<IntegrationTestW
 
     private static string GetHeaderValue(HttpResponseMessage response, string headerName)
     {
-        Assert.True(response.Headers.TryGetValues(headerName, out var values), $"Expected header '{headerName}' to be present.");
+        Assert.True(response.Headers.TryGetValues(headerName, out IEnumerable<string>? values), $"Expected header '{headerName}' to be present.");
         return Assert.Single(values);
     }
 }

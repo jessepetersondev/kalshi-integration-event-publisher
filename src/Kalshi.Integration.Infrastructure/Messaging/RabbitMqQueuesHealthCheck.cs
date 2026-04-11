@@ -6,18 +6,12 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Reports RabbitMQ queue health based on consumer presence, backlog age, and DLQ growth/size.
 /// </summary>
-public sealed class RabbitMqQueuesHealthCheck : IHealthCheck
+public sealed class RabbitMqQueuesHealthCheck(
+    RabbitMqQueueInspector queueInspector,
+    IOptions<RabbitMqOptions> options) : IHealthCheck
 {
-    private readonly RabbitMqQueueInspector _queueInspector;
-    private readonly RabbitMqOptions _options;
-
-    public RabbitMqQueuesHealthCheck(
-        RabbitMqQueueInspector queueInspector,
-        IOptions<RabbitMqOptions> options)
-    {
-        _queueInspector = queueInspector;
-        _options = options.Value;
-    }
+    private readonly RabbitMqQueueInspector _queueInspector = queueInspector;
+    private readonly RabbitMqOptions _options = options.Value;
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
@@ -32,24 +26,24 @@ public sealed class RabbitMqQueuesHealthCheck : IHealthCheck
             return HealthCheckResult.Unhealthy("RabbitMQ queue inspection failed.", exception);
         }
 
-        var now = snapshot.CapturedAt;
-        var data = new Dictionary<string, object>();
+        DateTimeOffset now = snapshot.CapturedAt;
+        Dictionary<string, object> data = [];
 
-        foreach (var queue in snapshot.Queues)
+        foreach (RabbitMqQueueSnapshot queue in snapshot.Queues)
         {
-            var key = NormalizeQueueName(queue.QueueName);
+            string key = NormalizeQueueName(queue.QueueName);
             data[$"{key}.messageCount"] = queue.MessageCount;
             data[$"{key}.consumerCount"] = queue.ConsumerCount;
             data[$"{key}.growthSincePreviousSample"] = queue.GrowthSincePreviousSample;
 
-            var backlogAge = queue.GetBacklogAge(now);
+            TimeSpan? backlogAge = queue.GetBacklogAge(now);
             if (backlogAge.HasValue)
             {
                 data[$"{key}.backlogAgeSeconds"] = backlogAge.Value.TotalSeconds;
             }
         }
 
-        var zeroConsumerCriticalQueue = snapshot.Queues
+        RabbitMqQueueSnapshot? zeroConsumerCriticalQueue = snapshot.Queues
             .FirstOrDefault(queue => queue.IsCritical && queue.ConsumerCount == 0);
         if (zeroConsumerCriticalQueue is not null)
         {
@@ -58,7 +52,7 @@ public sealed class RabbitMqQueuesHealthCheck : IHealthCheck
                 data: data);
         }
 
-        var unhealthyBacklogQueue = snapshot.Queues
+        RabbitMqQueueSnapshot? unhealthyBacklogQueue = snapshot.Queues
             .FirstOrDefault(queue => queue.IsCritical
                 && queue.GetBacklogAge(now)?.TotalSeconds >= _options.CriticalQueueBacklogUnhealthyAgeSeconds);
         if (unhealthyBacklogQueue is not null)
@@ -68,7 +62,7 @@ public sealed class RabbitMqQueuesHealthCheck : IHealthCheck
                 data: data);
         }
 
-        var degradedBacklogQueue = snapshot.Queues
+        RabbitMqQueueSnapshot? degradedBacklogQueue = snapshot.Queues
             .FirstOrDefault(queue => queue.IsCritical
                 && queue.GetBacklogAge(now)?.TotalSeconds >= _options.CriticalQueueBacklogDegradedAgeSeconds);
         if (degradedBacklogQueue is not null)
@@ -78,7 +72,7 @@ public sealed class RabbitMqQueuesHealthCheck : IHealthCheck
                 data: data);
         }
 
-        var deadLetterQueue = snapshot.Queues.FirstOrDefault(queue => queue.IsDeadLetter && queue.MessageCount > 0);
+        RabbitMqQueueSnapshot? deadLetterQueue = snapshot.Queues.FirstOrDefault(queue => queue.IsDeadLetter && queue.MessageCount > 0);
         if (deadLetterQueue is not null)
         {
             return HealthCheckResult.Degraded(

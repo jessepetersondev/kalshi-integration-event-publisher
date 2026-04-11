@@ -2,12 +2,12 @@ using System.Text.Json;
 using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Executor.Handlers;
 using Kalshi.Integration.Executor.Persistence;
+using Kalshi.Integration.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Kalshi.Integration.Infrastructure.Messaging;
 
 namespace Kalshi.Integration.Executor.Messaging;
 
@@ -15,23 +15,16 @@ namespace Kalshi.Integration.Executor.Messaging;
 /// Replays stale non-terminal executions from durable state so executor gaps close after crashes,
 /// broker interruptions, or ack/publish loss.
 /// </summary>
-public sealed class ExecutionRepairBackgroundService : BackgroundService
+public sealed class ExecutionRepairBackgroundService(
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<RabbitMqOptions> options,
+    ILogger<ExecutionRepairBackgroundService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqOptions _options;
-    private readonly ILogger<ExecutionRepairBackgroundService> _logger;
-
-    public ExecutionRepairBackgroundService(
-        IServiceScopeFactory serviceScopeFactory,
-        IOptions<RabbitMqOptions> options,
-        ILogger<ExecutionRepairBackgroundService> logger)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _options = options.Value;
-        _logger = logger;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqOptions _options = options.Value;
+    private readonly ILogger<ExecutionRepairBackgroundService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -39,11 +32,11 @@ public sealed class ExecutionRepairBackgroundService : BackgroundService
         {
             try
             {
-                using var scope = _serviceScopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<ExecutorDbContext>();
-                var handler = scope.ServiceProvider.GetRequiredService<OrderCreatedHandler>();
-                var issueRecorder = scope.ServiceProvider.GetRequiredService<ExecutorOperationalIssueRecorder>();
-                var replayCutoff = DateTimeOffset.UtcNow.AddSeconds(-_options.RepairGraceSeconds);
+                using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                ExecutorDbContext dbContext = scope.ServiceProvider.GetRequiredService<ExecutorDbContext>();
+                OrderCreatedHandler handler = scope.ServiceProvider.GetRequiredService<OrderCreatedHandler>();
+                ExecutorOperationalIssueRecorder issueRecorder = scope.ServiceProvider.GetRequiredService<ExecutorOperationalIssueRecorder>();
+                DateTimeOffset replayCutoff = DateTimeOffset.UtcNow.AddSeconds(-_options.RepairGraceSeconds);
 
                 var staleExecutions = (await dbContext.ExecutionRecords
                     .AsNoTracking()
@@ -57,7 +50,7 @@ public sealed class ExecutionRepairBackgroundService : BackgroundService
 
                 foreach (var staleExecution in staleExecutions)
                 {
-                    var inbound = await dbContext.InboundMessages
+                    Persistence.Entities.ExecutorInboundMessageEntity? inbound = await dbContext.InboundMessages
                         .AsNoTracking()
                         .SingleOrDefaultAsync(x => x.Id == staleExecution.CommandEventId, stoppingToken);
 
@@ -75,7 +68,7 @@ public sealed class ExecutionRepairBackgroundService : BackgroundService
 
                     try
                     {
-                        var envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(inbound.PayloadJson, SerializerOptions)
+                        ApplicationEventEnvelope envelope = JsonSerializer.Deserialize<ApplicationEventEnvelope>(inbound.PayloadJson, SerializerOptions)
                             ?? throw new InvalidOperationException($"Inbound payload '{inbound.Id}' could not be deserialized.");
 
                         await handler.HandleAsync(envelope, stoppingToken);

@@ -16,44 +16,34 @@ namespace Kalshi.Integration.Api.Controllers;
 /// Accepts callbacks from external systems and records their effects as audited,
 /// idempotent application events.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="IntegrationsController"/> class.
+/// </remarks>
+/// <param name="tradingService">The trading workflow service.</param>
+/// <param name="issueStore">The store used to record operational issues.</param>
+/// <param name="auditRecordStore">The store used to persist audit records.</param>
+/// <param name="applicationEventPublisher">The publisher used to emit integration events.</param>
+/// <param name="idempotencyService">The service used to prevent duplicate callback processing.</param>
+/// <param name="logger">The logger for the controller.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/integrations")]
-public sealed class IntegrationsController : ControllerBase
+public sealed class IntegrationsController(
+    TradingService tradingService,
+    IOperationalIssueStore issueStore,
+    IAuditRecordStore auditRecordStore,
+    IApplicationEventPublisher applicationEventPublisher,
+    IdempotencyService idempotencyService,
+    ILogger<IntegrationsController> logger) : ControllerBase
 {
     private const string IdempotencyScope = "execution-updates";
 
-    private readonly TradingService _tradingService;
-    private readonly IOperationalIssueStore _issueStore;
-    private readonly IAuditRecordStore _auditRecordStore;
-    private readonly IApplicationEventPublisher _applicationEventPublisher;
-    private readonly IdempotencyService _idempotencyService;
-    private readonly ILogger<IntegrationsController> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="IntegrationsController"/> class.
-    /// </summary>
-    /// <param name="tradingService">The trading workflow service.</param>
-    /// <param name="issueStore">The store used to record operational issues.</param>
-    /// <param name="auditRecordStore">The store used to persist audit records.</param>
-    /// <param name="applicationEventPublisher">The publisher used to emit integration events.</param>
-    /// <param name="idempotencyService">The service used to prevent duplicate callback processing.</param>
-    /// <param name="logger">The logger for the controller.</param>
-    public IntegrationsController(
-        TradingService tradingService,
-        IOperationalIssueStore issueStore,
-        IAuditRecordStore auditRecordStore,
-        IApplicationEventPublisher applicationEventPublisher,
-        IdempotencyService idempotencyService,
-        ILogger<IntegrationsController> logger)
-    {
-        _tradingService = tradingService;
-        _issueStore = issueStore;
-        _auditRecordStore = auditRecordStore;
-        _applicationEventPublisher = applicationEventPublisher;
-        _idempotencyService = idempotencyService;
-        _logger = logger;
-    }
+    private readonly TradingService _tradingService = tradingService;
+    private readonly IOperationalIssueStore _issueStore = issueStore;
+    private readonly IAuditRecordStore _auditRecordStore = auditRecordStore;
+    private readonly IApplicationEventPublisher _applicationEventPublisher = applicationEventPublisher;
+    private readonly IdempotencyService _idempotencyService = idempotencyService;
+    private readonly ILogger<IntegrationsController> _logger = logger;
 
     /// <summary>
     /// Applies an execution update produced by an external execution system.
@@ -69,19 +59,19 @@ public sealed class IntegrationsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ReceiveExecutionUpdate([FromBody] ExecutionUpdateRequest request, CancellationToken cancellationToken)
     {
-        var correlationId = RequestMetadata.ResolveCorrelationId(HttpContext, request.CorrelationId);
-        var inboundReplayKey = !string.IsNullOrWhiteSpace(request.CorrelationId)
+        string correlationId = RequestMetadata.ResolveCorrelationId(HttpContext, request.CorrelationId);
+        string inboundReplayKey = !string.IsNullOrWhiteSpace(request.CorrelationId)
             ? request.CorrelationId
             : $"{request.OrderId:N}:{request.Status.Trim().ToLowerInvariant()}:{request.FilledQuantity.ToString(CultureInfo.InvariantCulture)}:{request.OccurredAt?.ToUniversalTime().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "none"}";
-        var idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext, inboundReplayKey);
+        string? idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext, inboundReplayKey);
 
-        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        using IDisposable? scope = _logger.BeginScope(new Dictionary<string, object?>
         {
             ["CorrelationId"] = correlationId,
             ["IdempotencyKey"] = idempotencyKey,
         });
 
-        var replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
+        IdempotencyLookupResult replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
         if (replay.Status == IdempotencyLookupStatus.Conflict)
         {
             _logger.LogWarning("Rejected execution update because idempotency key {IdempotencyKey} was reused with a different payload.", idempotencyKey);
@@ -125,7 +115,7 @@ public sealed class IntegrationsController : ControllerBase
 
         try
         {
-            var result = await _tradingService.ApplyExecutionUpdateAsync(request, cancellationToken);
+            ExecutionUpdateResult result = await _tradingService.ApplyExecutionUpdateAsync(request, cancellationToken);
             var payload = new
             {
                 result.OrderId,

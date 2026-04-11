@@ -6,22 +6,17 @@ namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 /// <summary>
 /// Handles correlation propagation events.
 /// </summary>
-public sealed class CorrelationPropagationHandler : DelegatingHandler
+public sealed class CorrelationPropagationHandler(IHttpContextAccessor httpContextAccessor) : DelegatingHandler
 {
     private const string CorrelationIdHeaderName = "x-correlation-id";
 
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public CorrelationPropagationHandler(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
+    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (!request.Headers.Contains(CorrelationIdHeaderName))
         {
-            var correlationId = _httpContextAccessor.HttpContext?.Request.Headers[CorrelationIdHeaderName].ToString();
+            string? correlationId = _httpContextAccessor.HttpContext?.Request.Headers[CorrelationIdHeaderName].ToString();
 
             if (string.IsNullOrWhiteSpace(correlationId))
             {

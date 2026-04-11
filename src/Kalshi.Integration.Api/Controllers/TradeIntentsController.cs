@@ -15,44 +15,34 @@ namespace Kalshi.Integration.Api.Controllers;
 /// <summary>
 /// Accepts trade-intent requests, applies risk validation, and emits auditable domain events.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="TradeIntentsController"/> class.
+/// </remarks>
+/// <param name="tradingService">The service that creates trade intents.</param>
+/// <param name="issueStore">The store used to record operational issues.</param>
+/// <param name="auditRecordStore">The store used to persist audit records.</param>
+/// <param name="applicationEventPublisher">The publisher used to emit trade-intent events.</param>
+/// <param name="idempotencyService">The service used to detect duplicate trade-intent submissions.</param>
+/// <param name="logger">The logger for the controller.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/trade-intents")]
-public sealed class TradeIntentsController : ControllerBase
+public sealed class TradeIntentsController(
+    TradingService tradingService,
+    IOperationalIssueStore issueStore,
+    IAuditRecordStore auditRecordStore,
+    IApplicationEventPublisher applicationEventPublisher,
+    IdempotencyService idempotencyService,
+    ILogger<TradeIntentsController> logger) : ControllerBase
 {
     private const string IdempotencyScope = "trade-intents";
 
-    private readonly TradingService _tradingService;
-    private readonly IOperationalIssueStore _issueStore;
-    private readonly IAuditRecordStore _auditRecordStore;
-    private readonly IApplicationEventPublisher _applicationEventPublisher;
-    private readonly IdempotencyService _idempotencyService;
-    private readonly ILogger<TradeIntentsController> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TradeIntentsController"/> class.
-    /// </summary>
-    /// <param name="tradingService">The service that creates trade intents.</param>
-    /// <param name="issueStore">The store used to record operational issues.</param>
-    /// <param name="auditRecordStore">The store used to persist audit records.</param>
-    /// <param name="applicationEventPublisher">The publisher used to emit trade-intent events.</param>
-    /// <param name="idempotencyService">The service used to detect duplicate trade-intent submissions.</param>
-    /// <param name="logger">The logger for the controller.</param>
-    public TradeIntentsController(
-        TradingService tradingService,
-        IOperationalIssueStore issueStore,
-        IAuditRecordStore auditRecordStore,
-        IApplicationEventPublisher applicationEventPublisher,
-        IdempotencyService idempotencyService,
-        ILogger<TradeIntentsController> logger)
-    {
-        _tradingService = tradingService;
-        _issueStore = issueStore;
-        _auditRecordStore = auditRecordStore;
-        _applicationEventPublisher = applicationEventPublisher;
-        _idempotencyService = idempotencyService;
-        _logger = logger;
-    }
+    private readonly TradingService _tradingService = tradingService;
+    private readonly IOperationalIssueStore _issueStore = issueStore;
+    private readonly IAuditRecordStore _auditRecordStore = auditRecordStore;
+    private readonly IApplicationEventPublisher _applicationEventPublisher = applicationEventPublisher;
+    private readonly IdempotencyService _idempotencyService = idempotencyService;
+    private readonly ILogger<TradeIntentsController> _logger = logger;
 
     /// <summary>
     /// Creates a new trade intent after validating it against configured risk controls.
@@ -67,16 +57,16 @@ public sealed class TradeIntentsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create([FromBody] CreateTradeIntentRequest request, CancellationToken cancellationToken)
     {
-        var correlationId = RequestMetadata.ResolveCorrelationId(HttpContext, request.CorrelationId);
-        var idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext);
+        string correlationId = RequestMetadata.ResolveCorrelationId(HttpContext, request.CorrelationId);
+        string? idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext);
 
-        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        using IDisposable? scope = _logger.BeginScope(new Dictionary<string, object?>
         {
             ["CorrelationId"] = correlationId,
             ["IdempotencyKey"] = idempotencyKey,
         });
 
-        var replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
+        IdempotencyLookupResult replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
         if (replay.Status == IdempotencyLookupStatus.Conflict)
         {
             _logger.LogWarning("Rejected trade intent request because idempotency key {IdempotencyKey} was reused with a different payload.", idempotencyKey);
@@ -120,7 +110,7 @@ public sealed class TradeIntentsController : ControllerBase
 
         try
         {
-            var response = await _tradingService.CreateTradeIntentAsync(request, cancellationToken);
+            TradeIntentResponse response = await _tradingService.CreateTradeIntentAsync(request, cancellationToken);
             _logger.LogInformation("Created trade intent {TradeIntentId} for {Ticker}.", response.Id, response.Ticker);
 
             await _auditRecordStore.AddAsync(

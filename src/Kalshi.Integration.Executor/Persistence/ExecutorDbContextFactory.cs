@@ -7,7 +7,7 @@ public sealed class ExecutorDbContextFactory : IDesignTimeDbContextFactory<Execu
 {
     public ExecutorDbContext CreateDbContext(string[] args)
     {
-        var optionsBuilder = new DbContextOptionsBuilder<ExecutorDbContext>();
+        DbContextOptionsBuilder<ExecutorDbContext> optionsBuilder = new();
         optionsBuilder.UseSqlite("Data Source=kalshi-integration-executor.db");
         return new ExecutorDbContext(optionsBuilder.Options);
     }

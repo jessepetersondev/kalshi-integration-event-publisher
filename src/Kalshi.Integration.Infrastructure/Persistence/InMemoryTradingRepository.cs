@@ -43,13 +43,13 @@ public sealed class InMemoryTradingRepository :
 
     public Task<TradeIntent?> GetTradeIntentAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
     {
-        _tradeIntents.TryGetValue(tradeIntentId, out var tradeIntent);
+        _tradeIntents.TryGetValue(tradeIntentId, out TradeIntent? tradeIntent);
         return Task.FromResult(tradeIntent);
     }
 
     public Task<TradeIntent?> GetTradeIntentByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default)
     {
-        var tradeIntent = _tradeIntents.Values.FirstOrDefault(x => string.Equals(x.CorrelationId, correlationId, StringComparison.Ordinal));
+        TradeIntent? tradeIntent = _tradeIntents.Values.FirstOrDefault(x => string.Equals(x.CorrelationId, correlationId, StringComparison.Ordinal));
         return Task.FromResult(tradeIntent);
     }
 
@@ -59,7 +59,7 @@ public sealed class InMemoryTradingRepository :
         string? targetExternalOrderId,
         CancellationToken cancellationToken = default)
     {
-        var tradeIntent = _tradeIntents.Values
+        TradeIntent? tradeIntent = _tradeIntents.Values
             .Where(x => x.ActionType == TradeIntentActionType.Cancel)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefault(x =>
@@ -84,13 +84,13 @@ public sealed class InMemoryTradingRepository :
 
     public Task<Order?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
-        _orders.TryGetValue(orderId, out var order);
+        _orders.TryGetValue(orderId, out Order? order);
         return Task.FromResult(order);
     }
 
     public Task<Order?> GetLatestOrderByTradeIntentIdAsync(Guid tradeIntentId, CancellationToken cancellationToken = default)
     {
-        var order = _orders.Values
+        Order? order = _orders.Values
             .Where(x => x.TradeIntent.Id == tradeIntentId)
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.CreatedAt)
@@ -104,14 +104,14 @@ public sealed class InMemoryTradingRepository :
 
     public Task AddOrderEventAsync(ExecutionEvent executionEvent, CancellationToken cancellationToken = default)
     {
-        var queue = _orderEvents.GetOrAdd(executionEvent.OrderId, _ => new ConcurrentQueue<ExecutionEvent>());
+        ConcurrentQueue<ExecutionEvent> queue = _orderEvents.GetOrAdd(executionEvent.OrderId, _ => new ConcurrentQueue<ExecutionEvent>());
         queue.Enqueue(executionEvent);
         return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<ExecutionEvent>> GetOrderEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
-        if (_orderEvents.TryGetValue(orderId, out var queue))
+        if (_orderEvents.TryGetValue(orderId, out ConcurrentQueue<ExecutionEvent>? queue))
         {
             return Task.FromResult<IReadOnlyList<ExecutionEvent>>(queue.ToArray());
         }
@@ -121,14 +121,14 @@ public sealed class InMemoryTradingRepository :
 
     public Task AddOrderLifecycleEventAsync(Guid orderId, string stage, string? details, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
     {
-        var queue = _orderLifecycleEvents.GetOrAdd(orderId, _ => new ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
+        ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)> queue = _orderLifecycleEvents.GetOrAdd(orderId, _ => new ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)>());
         queue.Enqueue((stage, details, occurredAt));
         return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>> GetOrderLifecycleEventsAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
-        if (_orderLifecycleEvents.TryGetValue(orderId, out var queue))
+        if (_orderLifecycleEvents.TryGetValue(orderId, out ConcurrentQueue<(string Stage, string? Details, DateTimeOffset OccurredAt)>? queue))
         {
             return Task.FromResult<IReadOnlyList<(string Stage, string? Details, DateTimeOffset OccurredAt)>>(queue.ToArray());
         }
@@ -138,13 +138,13 @@ public sealed class InMemoryTradingRepository :
 
     public Task<bool> TryAddResultEventAsync(Guid resultEventId, Guid? orderId, string name, string? correlationId, string? idempotencyKey, string payloadJson, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
     {
-        var added = _resultEvents.TryAdd(resultEventId, new ResultEntry(orderId, name, correlationId, idempotencyKey, payloadJson, occurredAt));
+        bool added = _resultEvents.TryAdd(resultEventId, new ResultEntry(orderId, name, correlationId, idempotencyKey, payloadJson, occurredAt));
         return Task.FromResult(added);
     }
 
     public Task UpsertPositionSnapshotAsync(PositionSnapshot positionSnapshot, CancellationToken cancellationToken = default)
     {
-        var key = $"{positionSnapshot.Ticker}:{positionSnapshot.Side}";
+        string key = $"{positionSnapshot.Ticker}:{positionSnapshot.Side}";
         _positions[key] = positionSnapshot;
         return Task.CompletedTask;
     }
@@ -203,7 +203,7 @@ public sealed class InMemoryTradingRepository :
 
     public Task<OutboxDispatchItem?> GetAsync(Guid messageId, CancellationToken cancellationToken = default)
     {
-        if (_outboxMessages.TryGetValue(messageId, out var entry))
+        if (_outboxMessages.TryGetValue(messageId, out OutboxEntry? entry))
         {
             return Task.FromResult<OutboxDispatchItem?>(MapOutboxItem(entry));
         }
@@ -222,7 +222,7 @@ public sealed class InMemoryTradingRepository :
 
         lock (_syncRoot)
         {
-            foreach (var entry in _outboxMessages.Values
+            foreach (OutboxEntry? entry in _outboxMessages.Values
                          .Where(static x => x.Status == OutboxMessageStatus.Pending)
                          .Where(x => x.NextAttemptAt <= now)
                          .OrderBy(x => x.NextAttemptAt)
@@ -248,7 +248,7 @@ public sealed class InMemoryTradingRepository :
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken = default)
     {
-        if (_outboxMessages.TryGetValue(messageId, out var entry))
+        if (_outboxMessages.TryGetValue(messageId, out OutboxEntry? entry))
         {
             entry.AttemptCount = Math.Max(entry.AttemptCount, attemptNumber);
             entry.LastAttemptAt = occurredAt;
@@ -256,7 +256,7 @@ public sealed class InMemoryTradingRepository :
             entry.LastFailureKind = failureKind;
         }
 
-        var queue = _outboxAttempts.GetOrAdd(messageId, _ => new ConcurrentQueue<OutboxAttemptEntry>());
+        ConcurrentQueue<OutboxAttemptEntry> queue = _outboxAttempts.GetOrAdd(messageId, _ => new ConcurrentQueue<OutboxAttemptEntry>());
         queue.Enqueue(new OutboxAttemptEntry(attemptNumber, outcome, failureKind, errorMessage, occurredAt));
         return Task.CompletedTask;
     }
@@ -265,7 +265,7 @@ public sealed class InMemoryTradingRepository :
     {
         lock (_syncRoot)
         {
-            if (!_outboxMessages.TryGetValue(messageId, out var entry))
+            if (!_outboxMessages.TryGetValue(messageId, out OutboxEntry? entry))
             {
                 return Task.CompletedTask;
             }
@@ -275,7 +275,7 @@ public sealed class InMemoryTradingRepository :
             entry.LeaseExpiresAt = null;
             entry.ProcessorId = null;
 
-            if (_orders.TryGetValue(entry.AggregateId, out var order))
+            if (_orders.TryGetValue(entry.AggregateId, out Order? order))
             {
                 order.MarkPublishConfirmed(messageId, publishedAt);
                 GetLifecycleQueue(order.Id).Enqueue(("publish_confirmed", $"commandEventId={messageId}", publishedAt));
@@ -295,7 +295,7 @@ public sealed class InMemoryTradingRepository :
     {
         lock (_syncRoot)
         {
-            if (!_outboxMessages.TryGetValue(messageId, out var entry))
+            if (!_outboxMessages.TryGetValue(messageId, out OutboxEntry? entry))
             {
                 return Task.CompletedTask;
             }
@@ -307,7 +307,7 @@ public sealed class InMemoryTradingRepository :
             entry.LastError = errorMessage;
             entry.LastFailureKind = failureKind;
 
-            if (_orders.TryGetValue(entry.AggregateId, out var order))
+            if (_orders.TryGetValue(entry.AggregateId, out Order? order))
             {
                 order.MarkRetryScheduled(errorMessage, messageId, occurredAt);
                 GetLifecycleQueue(order.Id).Enqueue(("publish_retry_scheduled", errorMessage, occurredAt));
@@ -326,7 +326,7 @@ public sealed class InMemoryTradingRepository :
     {
         lock (_syncRoot)
         {
-            if (!_outboxMessages.TryGetValue(messageId, out var entry))
+            if (!_outboxMessages.TryGetValue(messageId, out OutboxEntry? entry))
             {
                 return Task.CompletedTask;
             }
@@ -337,7 +337,7 @@ public sealed class InMemoryTradingRepository :
             entry.LastError = errorMessage;
             entry.LastFailureKind = failureKind;
 
-            if (_orders.TryGetValue(entry.AggregateId, out var order))
+            if (_orders.TryGetValue(entry.AggregateId, out Order? order))
             {
                 order.MarkManualInterventionRequired(errorMessage, messageId, occurredAt);
                 GetLifecycleQueue(order.Id).Enqueue(("manual_intervention_required", errorMessage, occurredAt));
@@ -349,11 +349,11 @@ public sealed class InMemoryTradingRepository :
 
     public Task<int> ReleaseExpiredLeasesAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
-        var released = 0;
+        int released = 0;
 
         lock (_syncRoot)
         {
-            foreach (var entry in _outboxMessages.Values.Where(x => x.Status == OutboxMessageStatus.InFlight && x.LeaseExpiresAt <= now))
+            foreach (OutboxEntry? entry in _outboxMessages.Values.Where(x => x.Status == OutboxMessageStatus.InFlight && x.LeaseExpiresAt <= now))
             {
                 entry.Status = OutboxMessageStatus.Pending;
                 entry.LeaseExpiresAt = null;
@@ -367,7 +367,7 @@ public sealed class InMemoryTradingRepository :
 
     public Task<OutboxHealthSnapshot> GetHealthSnapshotAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
-        var pending = _outboxMessages.Values
+        OutboxEntry[] pending = _outboxMessages.Values
             .Where(x => x.Status == OutboxMessageStatus.Pending || x.Status == OutboxMessageStatus.InFlight)
             .ToArray();
 
@@ -385,12 +385,12 @@ public sealed class InMemoryTradingRepository :
     {
         lock (_syncRoot)
         {
-            if (_resultEvents.TryGetValue(resultEvent.Id, out var existing) && existing.AppliedAt.HasValue)
+            if (_resultEvents.TryGetValue(resultEvent.Id, out ResultEntry? existing) && existing.AppliedAt.HasValue)
             {
                 return Task.FromResult(false);
             }
 
-            if (!_resultEvents.TryGetValue(resultEvent.Id, out var pending))
+            if (!_resultEvents.TryGetValue(resultEvent.Id, out ResultEntry? pending))
             {
                 pending = new ResultEntry(
                     mutation.OrderId,
@@ -405,12 +405,12 @@ public sealed class InMemoryTradingRepository :
             pending.ApplyAttemptCount++;
             pending.LastApplyAttemptAt = DateTimeOffset.UtcNow;
 
-            if (!_orders.TryGetValue(mutation.OrderId, out var order))
+            if (!_orders.TryGetValue(mutation.OrderId, out Order? order))
             {
                 throw new KeyNotFoundException($"Order '{mutation.OrderId}' was not found.");
             }
 
-            var previousStatus = order.CurrentStatus;
+            OrderStatus previousStatus = order.CurrentStatus;
             order.ApplyResult(
                 mutation.ResultStatus,
                 mutation.NextStatus,
@@ -465,84 +465,56 @@ public sealed class InMemoryTradingRepository :
             entry.LastError,
             entry.Status);
 
-    private sealed class ResultEntry
+    private sealed class ResultEntry(
+        Guid? orderId,
+        string name,
+        string? correlationId,
+        string? idempotencyKey,
+        string payloadJson,
+        DateTimeOffset occurredAt)
     {
-        public ResultEntry(
-            Guid? orderId,
-            string name,
-            string? correlationId,
-            string? idempotencyKey,
-            string payloadJson,
-            DateTimeOffset occurredAt)
-        {
-            OrderId = orderId;
-            Name = name;
-            CorrelationId = correlationId;
-            IdempotencyKey = idempotencyKey;
-            PayloadJson = payloadJson;
-            OccurredAt = occurredAt;
-        }
-
-        public Guid? OrderId { get; }
-        public string Name { get; }
-        public string? CorrelationId { get; }
-        public string? IdempotencyKey { get; }
-        public string PayloadJson { get; }
-        public DateTimeOffset OccurredAt { get; }
+        public Guid? OrderId { get; } = orderId;
+        public string Name { get; } = name;
+        public string? CorrelationId { get; } = correlationId;
+        public string? IdempotencyKey { get; } = idempotencyKey;
+        public string PayloadJson { get; } = payloadJson;
+        public DateTimeOffset OccurredAt { get; } = occurredAt;
         public int ApplyAttemptCount { get; set; }
         public DateTimeOffset? LastApplyAttemptAt { get; set; }
         public DateTimeOffset? AppliedAt { get; set; }
         public string? LastError { get; set; }
     }
 
-    private sealed class OutboxEntry
+    private sealed class OutboxEntry(
+        Guid id,
+        Guid aggregateId,
+        string aggregateType,
+        string payloadJson,
+        OutboxMessageStatus status,
+        int attemptCount,
+        DateTimeOffset createdAt,
+        DateTimeOffset nextAttemptAt,
+        DateTimeOffset? lastAttemptAt,
+        DateTimeOffset? publishedAt,
+        string? processorId,
+        DateTimeOffset? leaseExpiresAt,
+        string? lastError,
+        string? lastFailureKind)
     {
-        public OutboxEntry(
-            Guid id,
-            Guid aggregateId,
-            string aggregateType,
-            string payloadJson,
-            OutboxMessageStatus status,
-            int attemptCount,
-            DateTimeOffset createdAt,
-            DateTimeOffset nextAttemptAt,
-            DateTimeOffset? lastAttemptAt,
-            DateTimeOffset? publishedAt,
-            string? processorId,
-            DateTimeOffset? leaseExpiresAt,
-            string? lastError,
-            string? lastFailureKind)
-        {
-            Id = id;
-            AggregateId = aggregateId;
-            AggregateType = aggregateType;
-            PayloadJson = payloadJson;
-            Status = status;
-            AttemptCount = attemptCount;
-            CreatedAt = createdAt;
-            NextAttemptAt = nextAttemptAt;
-            LastAttemptAt = lastAttemptAt;
-            PublishedAt = publishedAt;
-            ProcessorId = processorId;
-            LeaseExpiresAt = leaseExpiresAt;
-            LastError = lastError;
-            LastFailureKind = lastFailureKind;
-        }
-
-        public Guid Id { get; }
-        public Guid AggregateId { get; }
-        public string AggregateType { get; }
-        public string PayloadJson { get; }
-        public OutboxMessageStatus Status { get; set; }
-        public int AttemptCount { get; set; }
-        public DateTimeOffset CreatedAt { get; }
-        public DateTimeOffset NextAttemptAt { get; set; }
-        public DateTimeOffset? LastAttemptAt { get; set; }
-        public DateTimeOffset? PublishedAt { get; set; }
-        public string? ProcessorId { get; set; }
-        public DateTimeOffset? LeaseExpiresAt { get; set; }
-        public string? LastError { get; set; }
-        public string? LastFailureKind { get; set; }
+        public Guid Id { get; } = id;
+        public Guid AggregateId { get; } = aggregateId;
+        public string AggregateType { get; } = aggregateType;
+        public string PayloadJson { get; } = payloadJson;
+        public OutboxMessageStatus Status { get; set; } = status;
+        public int AttemptCount { get; set; } = attemptCount;
+        public DateTimeOffset CreatedAt { get; } = createdAt;
+        public DateTimeOffset NextAttemptAt { get; set; } = nextAttemptAt;
+        public DateTimeOffset? LastAttemptAt { get; set; } = lastAttemptAt;
+        public DateTimeOffset? PublishedAt { get; set; } = publishedAt;
+        public string? ProcessorId { get; set; } = processorId;
+        public DateTimeOffset? LeaseExpiresAt { get; set; } = leaseExpiresAt;
+        public string? LastError { get; set; } = lastError;
+        public string? LastFailureKind { get; set; } = lastFailureKind;
     }
 
     private sealed record OutboxAttemptEntry(

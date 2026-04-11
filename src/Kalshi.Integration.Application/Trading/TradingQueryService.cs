@@ -10,25 +10,19 @@ namespace Kalshi.Integration.Application.Trading;
 /// <summary>
 /// Reads order and position projections without mutating trading state.
 /// </summary>
-public sealed class TradingQueryService
+/// <remarks>
+/// Initializes a new instance of the <see cref="TradingQueryService"/> class.
+/// </remarks>
+/// <param name="orderRepository">The repository used to read orders.</param>
+/// <param name="positionSnapshotRepository">The repository used to read position snapshots.</param>
+public sealed class TradingQueryService(IOrderRepository orderRepository, IPositionSnapshotRepository positionSnapshotRepository)
 {
-    private readonly IOrderRepository _orderRepository;
-    private readonly IPositionSnapshotRepository _positionSnapshotRepository;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TradingQueryService"/> class.
-    /// </summary>
-    /// <param name="orderRepository">The repository used to read orders.</param>
-    /// <param name="positionSnapshotRepository">The repository used to read position snapshots.</param>
-    public TradingQueryService(IOrderRepository orderRepository, IPositionSnapshotRepository positionSnapshotRepository)
-    {
-        _orderRepository = orderRepository;
-        _positionSnapshotRepository = positionSnapshotRepository;
-    }
+    private readonly IOrderRepository _orderRepository = orderRepository;
+    private readonly IPositionSnapshotRepository _positionSnapshotRepository = positionSnapshotRepository;
 
     public async Task<OrderResponse?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
-        var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken);
+        Order? order = await _orderRepository.GetOrderAsync(orderId, cancellationToken);
         if (order is null)
         {
             return null;
@@ -48,8 +42,8 @@ public sealed class TradingQueryService
         int limit = 50,
         CancellationToken cancellationToken = default)
     {
-        var orders = await _orderRepository.GetOrdersAsync(cancellationToken);
-        var filtered = orders.AsEnumerable();
+        IReadOnlyList<Order> orders = await _orderRepository.GetOrdersAsync(cancellationToken);
+        IEnumerable<Order> filtered = orders.AsEnumerable();
 
         if (orderId.HasValue)
         {
@@ -68,25 +62,25 @@ public sealed class TradingQueryService
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            var normalizedStatus = NormalizeStatusToken(status);
+            string normalizedStatus = NormalizeStatusToken(status);
             filtered = filtered.Where(order => NormalizeStatusToken(order.CurrentStatus.ToString()) == normalizedStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(publishStatus))
         {
-            var normalizedPublishStatus = NormalizeStatusToken(publishStatus);
+            string normalizedPublishStatus = NormalizeStatusToken(publishStatus);
             filtered = filtered.Where(order => NormalizeStatusToken(order.PublishStatus.ToString()) == normalizedPublishStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(resultStatus))
         {
-            var normalizedResultStatus = NormalizeStatusToken(resultStatus);
+            string normalizedResultStatus = NormalizeStatusToken(resultStatus);
             filtered = filtered.Where(order => NormalizeStatusToken(order.LastResultStatus) == normalizedResultStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(outcomeState))
         {
-            var normalizedOutcomeState = NormalizeStatusToken(outcomeState);
+            string normalizedOutcomeState = NormalizeStatusToken(outcomeState);
             filtered = filtered.Where(order => NormalizeStatusToken(ResolveOutcomeState(order)) == normalizedOutcomeState);
         }
 
@@ -118,7 +112,7 @@ public sealed class TradingQueryService
 
     public async Task<IReadOnlyList<PositionResponse>> GetPositionsAsync(CancellationToken cancellationToken = default)
     {
-        var positions = await _positionSnapshotRepository.GetPositionsAsync(cancellationToken);
+        IReadOnlyList<Domain.Positions.PositionSnapshot> positions = await _positionSnapshotRepository.GetPositionsAsync(cancellationToken);
         return positions
             .OrderBy(position => position.Ticker)
             .Select(position => new PositionResponse(
@@ -132,7 +126,7 @@ public sealed class TradingQueryService
 
     private static string ResolveOutcomeState(Order order)
     {
-        var normalizedResultStatus = NormalizeStatusToken(order.LastResultStatus);
+        string normalizedResultStatus = NormalizeStatusToken(order.LastResultStatus);
         if (!string.IsNullOrWhiteSpace(normalizedResultStatus))
         {
             if (normalizedResultStatus.Contains("deadletter", StringComparison.Ordinal)
@@ -174,8 +168,8 @@ public sealed class TradingQueryService
             return string.Empty;
         }
 
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value.Trim().ToLowerInvariant())
+        StringBuilder builder = new(value.Length);
+        foreach (char character in value.Trim().ToLowerInvariant())
         {
             if (char.IsLetterOrDigit(character))
             {

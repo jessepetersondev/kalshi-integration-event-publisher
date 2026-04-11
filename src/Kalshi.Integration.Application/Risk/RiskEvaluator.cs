@@ -8,26 +8,20 @@ namespace Kalshi.Integration.Application.Risk;
 /// <summary>
 /// Applies the publisher's configurable validation and duplicate-detection rules to trade intents.
 /// </summary>
-public sealed class RiskEvaluator
+/// <remarks>
+/// Initializes a new instance of the <see cref="RiskEvaluator"/> class.
+/// </remarks>
+/// <param name="tradeIntentRepository">The repository used to detect duplicate correlation identifiers.</param>
+/// <param name="options">The configured risk limits.</param>
+public sealed class RiskEvaluator(ITradeIntentRepository tradeIntentRepository, IOptions<RiskOptions> options)
 {
-    private readonly ITradeIntentRepository _tradeIntentRepository;
-    private readonly RiskOptions _options;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RiskEvaluator"/> class.
-    /// </summary>
-    /// <param name="tradeIntentRepository">The repository used to detect duplicate correlation identifiers.</param>
-    /// <param name="options">The configured risk limits.</param>
-    public RiskEvaluator(ITradeIntentRepository tradeIntentRepository, IOptions<RiskOptions> options)
-    {
-        _tradeIntentRepository = tradeIntentRepository;
-        _options = options.Value;
-    }
+    private readonly ITradeIntentRepository _tradeIntentRepository = tradeIntentRepository;
+    private readonly RiskOptions _options = options.Value;
 
     public async Task<RiskDecision> EvaluateTradeIntentAsync(CreateTradeIntentRequest request, CancellationToken cancellationToken = default)
     {
-        var reasons = new List<string>();
-        var duplicateDetected = false;
+        List<string> reasons = [];
+        bool duplicateDetected = false;
 
         if (string.IsNullOrWhiteSpace(request.Ticker))
         {
@@ -61,7 +55,7 @@ public sealed class RiskEvaluator
             reasons.Add("Strategy name is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.ActionType) || !Enum.TryParse<TradeIntentActionType>(request.ActionType, ignoreCase: true, out var actionType))
+        if (string.IsNullOrWhiteSpace(request.ActionType) || !Enum.TryParse<TradeIntentActionType>(request.ActionType, ignoreCase: true, out TradeIntentActionType actionType))
         {
             reasons.Add("Action type must be one of 'entry', 'exit', or 'cancel'.");
         }
@@ -103,7 +97,7 @@ public sealed class RiskEvaluator
 
             if (actionType == TradeIntentActionType.Cancel)
             {
-                var existingCancel = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
+                TradeIntent? existingCancel = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
                     request.TargetPublisherOrderId,
                     request.TargetClientOrderId?.Trim(),
                     request.TargetExternalOrderId?.Trim(),
@@ -133,7 +127,7 @@ public sealed class RiskEvaluator
 
         if (_options.RejectDuplicateCorrelationIds && !string.IsNullOrWhiteSpace(request.CorrelationId))
         {
-            var existing = await _tradeIntentRepository.GetTradeIntentByCorrelationIdAsync(request.CorrelationId.Trim(), cancellationToken);
+            TradeIntent? existing = await _tradeIntentRepository.GetTradeIntentByCorrelationIdAsync(request.CorrelationId.Trim(), cancellationToken);
             if (existing is not null)
             {
                 duplicateDetected = true;
@@ -141,7 +135,7 @@ public sealed class RiskEvaluator
             }
         }
 
-        var accepted = reasons.Count == 0;
+        bool accepted = reasons.Count == 0;
         return new RiskDecision(
             accepted,
             accepted ? "accepted" : "rejected",

@@ -9,21 +9,14 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// Continuously drains the publisher command outbox so transient broker failures
 /// resolve through eventual retry instead of manual intervention.
 /// </summary>
-public sealed class PublisherCommandOutboxBackgroundService : BackgroundService
+public sealed class PublisherCommandOutboxBackgroundService(
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<RabbitMqOptions> options,
+    ILogger<PublisherCommandOutboxBackgroundService> logger) : BackgroundService
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly IOptions<RabbitMqOptions> _options;
-    private readonly ILogger<PublisherCommandOutboxBackgroundService> _logger;
-
-    public PublisherCommandOutboxBackgroundService(
-        IServiceScopeFactory serviceScopeFactory,
-        IOptions<RabbitMqOptions> options,
-        ILogger<PublisherCommandOutboxBackgroundService> logger)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _options = options;
-        _logger = logger;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly IOptions<RabbitMqOptions> _options = options;
+    private readonly ILogger<PublisherCommandOutboxBackgroundService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -31,8 +24,8 @@ public sealed class PublisherCommandOutboxBackgroundService : BackgroundService
         {
             try
             {
-                using var scope = _serviceScopeFactory.CreateScope();
-                var dispatcher = scope.ServiceProvider.GetRequiredService<PublisherCommandOutboxDispatcher>();
+                using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                PublisherCommandOutboxDispatcher dispatcher = scope.ServiceProvider.GetRequiredService<PublisherCommandOutboxDispatcher>();
                 await dispatcher.DrainDueMessagesAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

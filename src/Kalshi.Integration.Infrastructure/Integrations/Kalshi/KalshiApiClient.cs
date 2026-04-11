@@ -10,21 +10,15 @@ namespace Kalshi.Integration.Infrastructure.Integrations.Kalshi;
 /// <summary>
 /// Executes direct HTTP requests against the Kalshi trade API.
 /// </summary>
-public sealed class KalshiApiClient : IKalshiApiClient
+/// <remarks>
+/// Initializes a new instance of the <see cref="KalshiApiClient"/> class.
+/// </remarks>
+/// <param name="httpClient">The configured HTTP client.</param>
+/// <param name="options">The Kalshi API options.</param>
+public sealed class KalshiApiClient(HttpClient httpClient, IOptions<KalshiApiOptions> options) : IKalshiApiClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly KalshiApiOptions _options;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="KalshiApiClient"/> class.
-    /// </summary>
-    /// <param name="httpClient">The configured HTTP client.</param>
-    /// <param name="options">The Kalshi API options.</param>
-    public KalshiApiClient(HttpClient httpClient, IOptions<KalshiApiOptions> options)
-    {
-        _httpClient = httpClient;
-        _options = options.Value;
-    }
+    private readonly HttpClient _httpClient = httpClient;
+    private readonly KalshiApiOptions _options = options.Value;
 
     /// <inheritdoc />
     public Task<JsonNode> GetBalanceAsync(int subaccount, CancellationToken cancellationToken = default)
@@ -54,13 +48,14 @@ public sealed class KalshiApiClient : IKalshiApiClient
     /// <inheritdoc />
     public Task<JsonNode> GetSeriesAsync(string? category, IReadOnlyList<string> tags, CancellationToken cancellationToken = default)
     {
-        var query = new List<KeyValuePair<string, string?>>();
+        List<KeyValuePair<string, string?>> query = [];
+
         if (!string.IsNullOrWhiteSpace(category))
         {
             query.Add(CreateQueryPair("category", category.Trim()));
         }
 
-        foreach (var tag in tags.Where(static value => !string.IsNullOrWhiteSpace(value)))
+        foreach (string? tag in tags.Where(static value => !string.IsNullOrWhiteSpace(value)))
         {
             query.Add(CreateQueryPair("tags", tag.Trim()));
         }
@@ -71,10 +66,10 @@ public sealed class KalshiApiClient : IKalshiApiClient
     /// <inheritdoc />
     public Task<JsonNode> GetMarketsAsync(string? status, int limit, string? seriesTicker, string? cursor, CancellationToken cancellationToken = default)
     {
-        var query = new List<KeyValuePair<string, string?>>
-        {
+        List<KeyValuePair<string, string?>> query =
+        [
             CreateQueryPair("limit", Math.Clamp(limit, 1, 1000).ToString(CultureInfo.InvariantCulture)),
-        };
+        ];
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -115,10 +110,10 @@ public sealed class KalshiApiClient : IKalshiApiClient
     /// <inheritdoc />
     public Task<JsonNode> GetOrdersAsync(string? ticker, int subaccount, CancellationToken cancellationToken = default)
     {
-        var query = new List<KeyValuePair<string, string?>>
-        {
+        List<KeyValuePair<string, string?>> query =
+        [
             CreateQueryPair("subaccount", subaccount.ToString(CultureInfo.InvariantCulture)),
-        };
+        ];
 
         if (!string.IsNullOrWhiteSpace(ticker))
         {
@@ -152,11 +147,11 @@ public sealed class KalshiApiClient : IKalshiApiClient
         JsonObject? payload,
         CancellationToken cancellationToken)
     {
-        var normalizedPath = NormalizePath(path);
-        var relativeRequestPath = normalizedPath.TrimStart('/');
-        var requestUri = query is null ? relativeRequestPath : QueryHelpers.AddQueryString(relativeRequestPath, query);
+        string normalizedPath = NormalizePath(path);
+        string relativeRequestPath = normalizedPath.TrimStart('/');
+        string requestUri = query is null ? relativeRequestPath : QueryHelpers.AddQueryString(relativeRequestPath, query);
 
-        using var request = new HttpRequestMessage(method, requestUri);
+        using HttpRequestMessage request = new(method, requestUri);
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
 
         if (payload is not null)
@@ -166,14 +161,14 @@ public sealed class KalshiApiClient : IKalshiApiClient
 
         if (requireAuthentication)
         {
-            foreach (var header in BuildSignedHeaders(method, requestUri))
+            foreach (KeyValuePair<string, string> header in BuildSignedHeaders(method, requestUri))
             {
                 request.Headers.TryAddWithoutValidation(header.Key, header.Value);
             }
         }
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
+        string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
@@ -195,18 +190,18 @@ public sealed class KalshiApiClient : IKalshiApiClient
             throw new InvalidOperationException("Kalshi bridge is missing Integrations:KalshiApi:ApiKeyId.");
         }
 
-        var pem = LoadPrivateKeyPem();
+        string pem = LoadPrivateKeyPem();
         if (string.IsNullOrWhiteSpace(pem))
         {
             throw new InvalidOperationException("Kalshi bridge is missing a Kalshi private key.");
         }
 
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-        var message = Encoding.UTF8.GetBytes($"{timestamp}{method.Method.ToUpperInvariant()}{BuildSignaturePath(requestUri)}");
+        string timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        byte[] message = Encoding.UTF8.GetBytes($"{timestamp}{method.Method.ToUpperInvariant()}{BuildSignaturePath(requestUri)}");
 
-        using var rsa = RSA.Create();
+        using RSA rsa = RSA.Create();
         rsa.ImportFromPem(pem);
-        var signatureBytes = rsa.SignData(message, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        byte[] signatureBytes = rsa.SignData(message, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
 
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -238,7 +233,7 @@ public sealed class KalshiApiClient : IKalshiApiClient
             throw new InvalidOperationException("Kalshi bridge requires an HTTP base address before signing requests.");
         }
 
-        var absoluteUri = new Uri(_httpClient.BaseAddress, requestUri);
+        Uri absoluteUri = new(_httpClient.BaseAddress, requestUri);
         return absoluteUri.PathAndQuery.Split('?', 2)[0];
     }
 
@@ -255,7 +250,7 @@ public sealed class KalshiApiClient : IKalshiApiClient
             return payload.ToJsonString();
         }
 
-        var normalizedPayload = payload.DeepClone() as JsonObject ?? new JsonObject();
+        JsonObject normalizedPayload = payload.DeepClone() as JsonObject ?? [];
         NormalizeOrderPriceField(normalizedPayload, "yes_price_dollars");
         NormalizeOrderPriceField(normalizedPayload, "no_price_dollars");
         return normalizedPayload.ToJsonString();
@@ -263,7 +258,7 @@ public sealed class KalshiApiClient : IKalshiApiClient
 
     private static void NormalizeOrderPriceField(JsonObject payload, string propertyName)
     {
-        if (!payload.TryGetPropertyValue(propertyName, out var node) || node is null)
+        if (!payload.TryGetPropertyValue(propertyName, out JsonNode? node) || node is null)
         {
             return;
         }
@@ -273,9 +268,9 @@ public sealed class KalshiApiClient : IKalshiApiClient
             return;
         }
 
-        if (value.TryGetValue<string>(out var stringValue))
+        if (value.TryGetValue<string>(out string? stringValue))
         {
-            if (decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedStringValue))
+            if (decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsedStringValue))
             {
                 payload[propertyName] = parsedStringValue.ToString("0.0000", CultureInfo.InvariantCulture);
             }
@@ -283,13 +278,13 @@ public sealed class KalshiApiClient : IKalshiApiClient
             return;
         }
 
-        if (value.TryGetValue<decimal>(out var decimalValue))
+        if (value.TryGetValue<decimal>(out decimal decimalValue))
         {
             payload[propertyName] = decimalValue.ToString("0.0000", CultureInfo.InvariantCulture);
             return;
         }
 
-        if (value.TryGetValue<double>(out var doubleValue))
+        if (value.TryGetValue<double>(out double doubleValue))
         {
             payload[propertyName] = ((decimal)doubleValue).ToString("0.0000", CultureInfo.InvariantCulture);
         }

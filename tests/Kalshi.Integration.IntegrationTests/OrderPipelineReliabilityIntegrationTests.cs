@@ -23,22 +23,22 @@ public sealed class OrderPipelineReliabilityIntegrationTests
     [Fact]
     public async Task OrderPipeline_ShouldEventuallySucceedExactlyOnceAcrossTransientPublishFailures()
     {
-        await using var publisherConnection = new SqliteConnection("Data Source=:memory:");
+        await using SqliteConnection publisherConnection = new("Data Source=:memory:");
         await publisherConnection.OpenAsync();
-        await using var executorConnection = new SqliteConnection("Data Source=:memory:");
+        await using SqliteConnection executorConnection = new("Data Source=:memory:");
         await executorConnection.OpenAsync();
 
-        await using var publisherDbContext = CreatePublisherDbContext(publisherConnection);
-        await using var executorDbContext = CreateExecutorDbContext(executorConnection);
+        await using KalshiIntegrationDbContext publisherDbContext = CreatePublisherDbContext(publisherConnection);
+        await using ExecutorDbContext executorDbContext = CreateExecutorDbContext(executorConnection);
 
-        var publisherRepository = new EfTradingRepository(publisherDbContext, new TestLogger<EfTradingRepository>());
-        var riskEvaluator = new RiskEvaluator(publisherRepository, Options.Create(new RiskOptions { MaxOrderSize = 10 }));
-        var tradingService = new TradingService(publisherRepository, publisherRepository, publisherRepository, publisherRepository, riskEvaluator);
-        var orderSubmissionService = new OrderSubmissionService(publisherRepository, publisherRepository, publisherRepository);
-        var queryService = new TradingQueryService(publisherRepository, publisherRepository);
+        EfTradingRepository publisherRepository = new(publisherDbContext, new TestLogger<EfTradingRepository>());
+        RiskEvaluator riskEvaluator = new(publisherRepository, Options.Create(new RiskOptions { MaxOrderSize = 10 }));
+        TradingService tradingService = new(publisherRepository, publisherRepository, publisherRepository, publisherRepository, riskEvaluator);
+        OrderSubmissionService orderSubmissionService = new(publisherRepository, publisherRepository, publisherRepository);
+        TradingQueryService queryService = new(publisherRepository, publisherRepository);
 
-        var commandPublisher = new FlakyPublisher(failuresBeforeSuccess: 1);
-        var publisherDispatcher = new PublisherCommandOutboxDispatcher(
+        FlakyPublisher commandPublisher = new(failuresBeforeSuccess: 1);
+        PublisherCommandOutboxDispatcher publisherDispatcher = new(
             publisherRepository,
             commandPublisher,
             new InMemoryOperationalIssueStore(),
@@ -51,17 +51,17 @@ public sealed class OrderPipelineReliabilityIntegrationTests
             }),
             NullLogger<PublisherCommandOutboxDispatcher>.Instance);
 
-        var tradeIntent = new Domain.TradeIntents.TradeIntent("KXBTC", Domain.TradeIntents.TradeSide.Yes, 2, 0.45m, "Breakout", "corr-e2e");
+        Domain.TradeIntents.TradeIntent tradeIntent = new("KXBTC", Domain.TradeIntents.TradeSide.Yes, 2, 0.45m, "Breakout", "corr-e2e");
         await publisherRepository.AddTradeIntentAsync(tradeIntent);
 
-        var created = await orderSubmissionService.SubmitOrderAsync(new Contracts.Orders.CreateOrderRequest(tradeIntent.Id), "corr-e2e", "corr-e2e");
+        Contracts.Orders.OrderResponse created = await orderSubmissionService.SubmitOrderAsync(new Contracts.Orders.CreateOrderRequest(tradeIntent.Id), "corr-e2e", "corr-e2e");
         await publisherDispatcher.DispatchAsync(created.CommandEventId!.Value);
         await Task.Delay(5);
         await publisherDispatcher.DrainDueMessagesAsync();
-        var commandEnvelope = Assert.Single(commandPublisher.Events);
+        ApplicationEventEnvelope commandEnvelope = Assert.Single(commandPublisher.Events);
 
-        var kalshiClient = new FakeKalshiApiClient();
-        var handler = new OrderCreatedHandler(
+        FakeKalshiApiClient kalshiClient = new();
+        OrderCreatedHandler handler = new(
             executorDbContext,
             kalshiClient,
             new RabbitMqResultEventPublisher(),
@@ -78,8 +78,8 @@ public sealed class OrderPipelineReliabilityIntegrationTests
 
         await handler.HandleAsync(commandEnvelope);
 
-        var resultPublisher = new FlakyPublisher(failuresBeforeSuccess: 1);
-        var executorOutboxDispatcher = new ExecutorOutboxDispatcher(
+        FlakyPublisher resultPublisher = new(failuresBeforeSuccess: 1);
+        ExecutorOutboxDispatcher executorOutboxDispatcher = new(
             executorDbContext,
             resultPublisher,
             new ExecutorOperationalIssueRecorder(executorDbContext),
@@ -96,10 +96,10 @@ public sealed class OrderPipelineReliabilityIntegrationTests
         await Task.Delay(5);
         await executorOutboxDispatcher.DrainDueMessagesAsync();
 
-        var resultEnvelope = Assert.Single(resultPublisher.Events.Where(x => x.Name == "order.execution_succeeded"));
+        ApplicationEventEnvelope resultEnvelope = Assert.Single(resultPublisher.Events.Where(x => x.Name == "order.execution_succeeded"));
         await tradingService.ApplyExecutorResultAsync(resultEnvelope);
 
-        var order = await queryService.GetOrderAsync(created.Id);
+        Contracts.Orders.OrderResponse? order = await queryService.GetOrderAsync(created.Id);
         Assert.NotNull(order);
         Assert.Equal("resting", order!.Status);
         Assert.Equal("publishconfirmed", order.PublishStatus);
@@ -109,34 +109,29 @@ public sealed class OrderPipelineReliabilityIntegrationTests
 
     private static KalshiIntegrationDbContext CreatePublisherDbContext(SqliteConnection connection)
     {
-        var options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
+        DbContextOptions<KalshiIntegrationDbContext> options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        var dbContext = new KalshiIntegrationDbContext(options);
+        KalshiIntegrationDbContext dbContext = new(options);
         dbContext.Database.EnsureCreated();
         return dbContext;
     }
 
     private static ExecutorDbContext CreateExecutorDbContext(SqliteConnection connection)
     {
-        var options = new DbContextOptionsBuilder<ExecutorDbContext>()
+        DbContextOptions<ExecutorDbContext> options = new DbContextOptionsBuilder<ExecutorDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        var dbContext = new ExecutorDbContext(options);
+        ExecutorDbContext dbContext = new(options);
         dbContext.Database.EnsureCreated();
         return dbContext;
     }
 
-    private sealed class FlakyPublisher : IApplicationEventPublisher
+    private sealed class FlakyPublisher(int failuresBeforeSuccess) : IApplicationEventPublisher
     {
-        private int _remainingFailures;
-
-        public FlakyPublisher(int failuresBeforeSuccess)
-        {
-            _remainingFailures = failuresBeforeSuccess;
-        }
+        private int _remainingFailures = failuresBeforeSuccess;
 
         public List<ApplicationEventEnvelope> Events { get; } = [];
 

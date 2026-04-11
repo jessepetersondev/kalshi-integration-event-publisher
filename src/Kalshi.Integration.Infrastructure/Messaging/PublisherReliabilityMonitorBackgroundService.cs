@@ -11,29 +11,21 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// <summary>
 /// Samples publisher-side reliability state, emits telemetry, and records operator-visible issues on degradation.
 /// </summary>
-public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundService
+public sealed class PublisherReliabilityMonitorBackgroundService(
+    IServiceScopeFactory serviceScopeFactory,
+    RabbitMqQueueInspector queueInspector,
+    IOptions<RabbitMqOptions> options,
+    ILogger<PublisherReliabilityMonitorBackgroundService> logger) : BackgroundService
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly RabbitMqQueueInspector _queueInspector;
-    private readonly RabbitMqOptions _options;
-    private readonly ILogger<PublisherReliabilityMonitorBackgroundService> _logger;
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly RabbitMqQueueInspector _queueInspector = queueInspector;
+    private readonly RabbitMqOptions _options = options.Value;
+    private readonly ILogger<PublisherReliabilityMonitorBackgroundService> _logger = logger;
     private readonly HashSet<string> _queuesWithoutConsumers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _deadLetterCounts = new(StringComparer.Ordinal);
     private bool _queueInspectionFailed;
     private long _manualInterventionCount;
     private int _outboxDelaySeverity;
-
-    public PublisherReliabilityMonitorBackgroundService(
-        IServiceScopeFactory serviceScopeFactory,
-        RabbitMqQueueInspector queueInspector,
-        IOptions<RabbitMqOptions> options,
-        ILogger<PublisherReliabilityMonitorBackgroundService> logger)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _queueInspector = queueInspector;
-        _options = options.Value;
-        _logger = logger;
-    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -41,16 +33,16 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
         {
             try
             {
-                using var scope = _serviceScopeFactory.CreateScope();
-                var outboxStore = scope.ServiceProvider.GetRequiredService<IPublisherCommandOutboxStore>();
-                var issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
-                var now = DateTimeOffset.UtcNow;
-                var outboxSnapshot = await outboxStore.GetHealthSnapshotAsync(now, stoppingToken);
+                using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                IPublisherCommandOutboxStore outboxStore = scope.ServiceProvider.GetRequiredService<IPublisherCommandOutboxStore>();
+                IOperationalIssueStore issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                Contracts.Reliability.OutboxHealthSnapshot outboxSnapshot = await outboxStore.GetHealthSnapshotAsync(now, stoppingToken);
 
                 RecordOutboxMetrics(now, outboxSnapshot);
                 await RaiseOutboxIssuesAsync(issueStore, now, outboxSnapshot, stoppingToken);
 
-                var queueSnapshot = await _queueInspector.CaptureAsync(stoppingToken);
+                RabbitMqQueueDiagnosticsSnapshot queueSnapshot = await _queueInspector.CaptureAsync(stoppingToken);
                 _queueInspectionFailed = false;
                 RecordQueueMetrics(queueSnapshot);
                 await RaiseQueueIssuesAsync(issueStore, queueSnapshot, stoppingToken);
@@ -67,8 +59,8 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
 
                 if (!_queueInspectionFailed)
                 {
-                    using var scope = _serviceScopeFactory.CreateScope();
-                    var issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
+                    using IServiceScope scope = _serviceScopeFactory.CreateScope();
+                    IOperationalIssueStore issueStore = scope.ServiceProvider.GetRequiredService<IOperationalIssueStore>();
                     await issueStore.AddAsync(
                         OperationalIssue.Create(
                             category: "reliability",
@@ -94,7 +86,7 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
             new KeyValuePair<string, object?>("component", "publisher"),
             new KeyValuePair<string, object?>("outbox", "command"));
 
-        var oldestPendingAgeMs = outboxSnapshot.OldestPendingCreatedAt.HasValue
+        double oldestPendingAgeMs = outboxSnapshot.OldestPendingCreatedAt.HasValue
             ? Math.Max(0, (now - outboxSnapshot.OldestPendingCreatedAt.Value).TotalMilliseconds)
             : 0;
 
@@ -130,8 +122,8 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
             return;
         }
 
-        var oldestAgeSeconds = (now - outboxSnapshot.OldestPendingCreatedAt.Value).TotalSeconds;
-        var severity = oldestAgeSeconds >= _options.OutboxUnhealthyAgeSeconds
+        double oldestAgeSeconds = (now - outboxSnapshot.OldestPendingCreatedAt.Value).TotalSeconds;
+        int severity = oldestAgeSeconds >= _options.OutboxUnhealthyAgeSeconds
             ? 2
             : oldestAgeSeconds >= _options.OutboxDegradedAgeSeconds
                 ? 1
@@ -156,14 +148,14 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
 
     private static void RecordQueueMetrics(RabbitMqQueueDiagnosticsSnapshot snapshot)
     {
-        foreach (var queue in snapshot.Queues)
+        foreach (RabbitMqQueueSnapshot queue in snapshot.Queues)
         {
-            var tags = new[]
-            {
+            KeyValuePair<string, object?>[] tags =
+            [
                 new KeyValuePair<string, object?>("component", "publisher"),
                 new KeyValuePair<string, object?>("queue", queue.QueueName),
                 new KeyValuePair<string, object?>("queue_role", queue.IsDeadLetter ? "dead_letter" : "critical"),
-            };
+            ];
 
             KalshiTelemetry.RabbitMqQueueBacklogCount.Record(queue.MessageCount, tags);
             KalshiTelemetry.RabbitMqQueueConsumerCount.Record(queue.ConsumerCount, tags);
@@ -185,7 +177,7 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
         RabbitMqQueueDiagnosticsSnapshot snapshot,
         CancellationToken cancellationToken)
     {
-        foreach (var queue in snapshot.Queues)
+        foreach (RabbitMqQueueSnapshot queue in snapshot.Queues)
         {
             if (queue.IsCritical)
             {
@@ -211,7 +203,7 @@ public sealed class PublisherReliabilityMonitorBackgroundService : BackgroundSer
 
             if (queue.IsDeadLetter)
             {
-                _deadLetterCounts.TryGetValue(queue.QueueName, out var previousCount);
+                _deadLetterCounts.TryGetValue(queue.QueueName, out long previousCount);
                 _deadLetterCounts[queue.QueueName] = queue.MessageCount;
 
                 if (queue.MessageCount > 0 && queue.MessageCount > previousCount)

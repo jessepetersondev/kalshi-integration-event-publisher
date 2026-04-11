@@ -18,7 +18,27 @@ namespace Kalshi.Integration.Infrastructure.Integrations.Kalshi;
 /// <summary>
 /// Exposes a Kalshi-compatible bridge on top of publisher-owned order tracking.
 /// </summary>
-public sealed class KalshiBridgeService
+/// <remarks>
+/// Initializes a new instance of the <see cref="KalshiBridgeService"/> class.
+/// </remarks>
+/// <param name="kalshiApiClient">The direct Kalshi API client.</param>
+/// <param name="orderRepository">The repository used to find related cancel commands.</param>
+/// <param name="tradeIntentRepository">The repository used to find matching cancel trade-intents.</param>
+/// <param name="orderSubmissionService">The service that persists orders and queues durable order commands.</param>
+/// <param name="outboxDispatcher">The dispatcher used for best-effort immediate command publication.</param>
+/// <param name="tradingService">The publisher trading workflow service.</param>
+/// <param name="tradingQueryService">The publisher trading query service.</param>
+/// <param name="options">The Kalshi bridge configuration.</param>
+[method: ActivatorUtilitiesConstructor]
+public sealed class KalshiBridgeService(
+    IKalshiApiClient kalshiApiClient,
+    IOrderRepository orderRepository,
+    ITradeIntentRepository tradeIntentRepository,
+    OrderSubmissionService orderSubmissionService,
+    PublisherCommandOutboxDispatcher outboxDispatcher,
+    TradingService tradingService,
+    TradingQueryService tradingQueryService,
+    IOptions<KalshiApiOptions> options)
 {
     private static readonly HashSet<string> TerminalStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,14 +49,14 @@ public sealed class KalshiBridgeService
         "settled",
     };
 
-    private readonly IKalshiApiClient _kalshiApiClient;
-    private readonly IOrderRepository _orderRepository;
-    private readonly ITradeIntentRepository _tradeIntentRepository;
-    private readonly OrderSubmissionService _orderSubmissionService;
-    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher;
-    private readonly TradingService _tradingService;
-    private readonly TradingQueryService _tradingQueryService;
-    private readonly KalshiApiOptions _options;
+    private readonly IKalshiApiClient _kalshiApiClient = kalshiApiClient;
+    private readonly IOrderRepository _orderRepository = orderRepository;
+    private readonly ITradeIntentRepository _tradeIntentRepository = tradeIntentRepository;
+    private readonly OrderSubmissionService _orderSubmissionService = orderSubmissionService;
+    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher = outboxDispatcher;
+    private readonly TradingService _tradingService = tradingService;
+    private readonly TradingQueryService _tradingQueryService = tradingQueryService;
+    private readonly KalshiApiOptions _options = options.Value;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KalshiBridgeService"/> class.
@@ -77,38 +97,6 @@ public sealed class KalshiBridgeService
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="KalshiBridgeService"/> class.
-    /// </summary>
-    /// <param name="kalshiApiClient">The direct Kalshi API client.</param>
-    /// <param name="orderRepository">The repository used to find related cancel commands.</param>
-    /// <param name="tradeIntentRepository">The repository used to find matching cancel trade-intents.</param>
-    /// <param name="orderSubmissionService">The service that persists orders and queues durable order commands.</param>
-    /// <param name="outboxDispatcher">The dispatcher used for best-effort immediate command publication.</param>
-    /// <param name="tradingService">The publisher trading workflow service.</param>
-    /// <param name="tradingQueryService">The publisher trading query service.</param>
-    /// <param name="options">The Kalshi bridge configuration.</param>
-    [ActivatorUtilitiesConstructor]
-    public KalshiBridgeService(
-        IKalshiApiClient kalshiApiClient,
-        IOrderRepository orderRepository,
-        ITradeIntentRepository tradeIntentRepository,
-        OrderSubmissionService orderSubmissionService,
-        PublisherCommandOutboxDispatcher outboxDispatcher,
-        TradingService tradingService,
-        TradingQueryService tradingQueryService,
-        IOptions<KalshiApiOptions> options)
-    {
-        _kalshiApiClient = kalshiApiClient;
-        _orderRepository = orderRepository;
-        _tradeIntentRepository = tradeIntentRepository;
-        _orderSubmissionService = orderSubmissionService;
-        _outboxDispatcher = outboxDispatcher;
-        _tradingService = tradingService;
-        _tradingQueryService = tradingQueryService;
-        _options = options.Value;
-    }
-
-    /// <summary>
     /// Returns the raw Kalshi series payload.
     /// </summary>
     public Task<JsonNode> GetSeriesAsync(string? category, IReadOnlyList<string> tags, CancellationToken cancellationToken = default)
@@ -143,8 +131,8 @@ public sealed class KalshiBridgeService
     /// </summary>
     public async Task<JsonNode> PlaceOrderAsync(SubmitKalshiOrderRequest request, CancellationToken cancellationToken = default)
     {
-        var tradeIntent = await _tradingService.CreateTradeIntentAsync(BuildTradeIntentRequest(request), cancellationToken);
-        var order = await _orderSubmissionService.SubmitOrderAsync(
+        TradeIntentResponse tradeIntent = await _tradingService.CreateTradeIntentAsync(BuildTradeIntentRequest(request), cancellationToken);
+        OrderResponse order = await _orderSubmissionService.SubmitOrderAsync(
             new CreateOrderRequest(tradeIntent.Id),
             tradeIntent.CorrelationId,
             tradeIntent.CorrelationId,
@@ -172,8 +160,8 @@ public sealed class KalshiBridgeService
     /// </summary>
     public async Task<JsonNode> GetOrderAsync(Guid publisherOrderId, CancellationToken cancellationToken = default)
     {
-        var order = await GetRequiredOrderAsync(publisherOrderId, cancellationToken);
-        var latestCancelOrder = await GetLatestCancelOrderAsync(publisherOrderId, cancellationToken);
+        OrderResponse order = await GetRequiredOrderAsync(publisherOrderId, cancellationToken);
+        OrderResponse? latestCancelOrder = await GetLatestCancelOrderAsync(publisherOrderId, cancellationToken);
         return BuildBridgeOrderEnvelope(
             order,
             bridgeStatusOverride: ResolveCancelBridgeStatusOverride(latestCancelOrder),
@@ -185,16 +173,16 @@ public sealed class KalshiBridgeService
     /// </summary>
     public async Task<JsonNode> CancelOrderAsync(Guid publisherOrderId, CancellationToken cancellationToken = default)
     {
-        var order = await GetRequiredOrderAsync(publisherOrderId, cancellationToken);
+        OrderResponse order = await GetRequiredOrderAsync(publisherOrderId, cancellationToken);
         if (IsTerminalStatus(order.Status))
         {
             return BuildBridgeOrderEnvelope(order);
         }
 
-        var cancelOrder = await GetLatestCancelOrderAsync(publisherOrderId, cancellationToken);
+        OrderResponse? cancelOrder = await GetLatestCancelOrderAsync(publisherOrderId, cancellationToken);
         if (cancelOrder is null)
         {
-            var cancelTradeIntent = await _tradingService.CreateTradeIntentAsync(BuildCancelTradeIntentRequest(order), cancellationToken);
+            TradeIntentResponse cancelTradeIntent = await _tradingService.CreateTradeIntentAsync(BuildCancelTradeIntentRequest(order), cancellationToken);
             cancelOrder = await _orderSubmissionService.SubmitOrderAsync(
                 new CreateOrderRequest(cancelTradeIntent.Id),
                 cancelTradeIntent.CorrelationId,
@@ -225,10 +213,10 @@ public sealed class KalshiBridgeService
 
     private static CreateTradeIntentRequest BuildTradeIntentRequest(SubmitKalshiOrderRequest request)
     {
-        var normalizedSide = NormalizeSide(request.Side);
-        var actionType = NormalizeActionType(request.Action);
-        var limitPrice = ResolveLimitPrice(request, normalizedSide);
-        var correlationId = !string.IsNullOrWhiteSpace(request.CorrelationId)
+        string normalizedSide = NormalizeSide(request.Side);
+        string actionType = NormalizeActionType(request.Action);
+        decimal limitPrice = ResolveLimitPrice(request, normalizedSide);
+        string correlationId = !string.IsNullOrWhiteSpace(request.CorrelationId)
             ? request.CorrelationId.Trim()
             : (!string.IsNullOrWhiteSpace(request.ClientOrderId) ? request.ClientOrderId.Trim() : Guid.NewGuid().ToString("N"));
 
@@ -284,7 +272,7 @@ public sealed class KalshiBridgeService
 
     private async Task<OrderResponse> WaitForOrderActivityAsync(Guid orderId, DateTimeOffset baselineUpdatedAt, CancellationToken cancellationToken)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(2);
+        DateTimeOffset timeoutAt = DateTimeOffset.UtcNow.AddSeconds(2);
         OrderResponse current = await GetRequiredOrderAsync(orderId, cancellationToken);
 
         while (DateTimeOffset.UtcNow < timeoutAt)
@@ -305,7 +293,7 @@ public sealed class KalshiBridgeService
 
     private async Task<OrderResponse?> GetLatestCancelOrderAsync(Guid targetPublisherOrderId, CancellationToken cancellationToken)
     {
-        var cancelTradeIntent = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
+        TradeIntent? cancelTradeIntent = await _tradeIntentRepository.FindMatchingCancelTradeIntentAsync(
             targetPublisherOrderId,
             targetClientOrderId: null,
             targetExternalOrderId: null,
@@ -316,7 +304,7 @@ public sealed class KalshiBridgeService
             return null;
         }
 
-        var cancelOrder = await _orderRepository.GetLatestOrderByTradeIntentIdAsync(cancelTradeIntent.Id, cancellationToken);
+        Domain.Orders.Order? cancelOrder = await _orderRepository.GetLatestOrderByTradeIntentIdAsync(cancelTradeIntent.Id, cancellationToken);
 
         return cancelOrder is null
             ? null
@@ -353,7 +341,7 @@ public sealed class KalshiBridgeService
             return null;
         }
 
-        var normalized = value.Trim();
+        string normalized = value.Trim();
         return string.Equals(normalized, "good_til_cancelled", StringComparison.OrdinalIgnoreCase)
             ? "good_till_canceled"
             : normalized;
@@ -382,11 +370,11 @@ public sealed class KalshiBridgeService
 
     private static JsonObject BuildBridgeOrderEnvelope(OrderResponse order, string? bridgeStatusOverride = null, DateTimeOffset? updatedAtOverride = null)
     {
-        var orderNode = new JsonObject();
-        var totalContracts = order.Quantity ?? 0;
-        var filledContracts = order.FilledQuantity;
-        var remainingContracts = Math.Max(totalContracts - filledContracts, 0);
-        var side = NormalizeSide(order.Side);
+        JsonObject orderNode = [];
+        int totalContracts = order.Quantity ?? 0;
+        int filledContracts = order.FilledQuantity;
+        int remainingContracts = Math.Max(totalContracts - filledContracts, 0);
+        string side = NormalizeSide(order.Side);
 
         orderNode["order_id"] = order.Id.ToString();
         orderNode["publisher_order_id"] = order.Id.ToString();
@@ -428,7 +416,7 @@ public sealed class KalshiBridgeService
             throw new DomainException("Side is required.");
         }
 
-        var normalized = value.Trim().ToLowerInvariant();
+        string normalized = value.Trim().ToLowerInvariant();
         if (normalized is "yes" or "no")
         {
             return normalized;
@@ -439,7 +427,7 @@ public sealed class KalshiBridgeService
 
     private static string NormalizeActionType(string value)
     {
-        var normalized = value.Trim().ToLowerInvariant();
+        string normalized = value.Trim().ToLowerInvariant();
         return normalized switch
         {
             "buy" => "entry",
@@ -450,7 +438,7 @@ public sealed class KalshiBridgeService
 
     private static decimal ResolveLimitPrice(SubmitKalshiOrderRequest request, string normalizedSide)
     {
-        var price = string.Equals(normalizedSide, "yes", StringComparison.Ordinal)
+        decimal? price = string.Equals(normalizedSide, "yes", StringComparison.Ordinal)
             ? request.YesPriceDollars
             : request.NoPriceDollars;
 
@@ -474,7 +462,7 @@ public sealed class KalshiBridgeService
 
     private static string ResolveBridgeStatus(string publisherStatus, int remainingContracts)
     {
-        var normalizedPublisherStatus = NormalizeToken(publisherStatus);
+        string normalizedPublisherStatus = NormalizeToken(publisherStatus);
         return normalizedPublisherStatus switch
         {
             "accepted" => "open",
@@ -492,8 +480,8 @@ public sealed class KalshiBridgeService
             return string.Empty;
         }
 
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value.Trim().ToLowerInvariant())
+        StringBuilder builder = new(value.Length);
+        foreach (char character in value.Trim().ToLowerInvariant())
         {
             if (char.IsLetterOrDigit(character))
             {

@@ -14,7 +14,7 @@ public sealed class RabbitMqApplicationEventPublisherTests
     [Fact]
     public async Task PublishAsync_ShouldDeclareExchangeAndPublishSerializedEvent()
     {
-        var options = Options.Create(new RabbitMqOptions
+        IOptions<RabbitMqOptions> options = Options.Create(new RabbitMqOptions
         {
             Exchange = "kalshi.events",
             ExchangeType = "topic",
@@ -22,10 +22,10 @@ public sealed class RabbitMqApplicationEventPublisherTests
             ClientProvidedName = "kalshi-unit-tests",
         });
 
-        var connectionFactory = new Mock<IConnectionFactory>(MockBehavior.Strict);
-        var connection = new Mock<IConnection>(MockBehavior.Strict);
-        var model = new Mock<IModel>(MockBehavior.Strict);
-        var properties = new Mock<IBasicProperties>(MockBehavior.Strict);
+        Mock<IConnectionFactory> connectionFactory = new(MockBehavior.Strict);
+        Mock<IConnection> connection = new(MockBehavior.Strict);
+        Mock<IModel> model = new(MockBehavior.Strict);
+        Mock<IBasicProperties> properties = new(MockBehavior.Strict);
         properties.SetupAllProperties();
         properties.Object.Headers = new Dictionary<string, object>();
 
@@ -87,20 +87,20 @@ public sealed class RabbitMqApplicationEventPublisherTests
                 routingKey = key;
                 publishedBody = body.ToArray();
             });
-        var confirmTimedOut = false;
+        bool confirmTimedOut = false;
         model
             .Setup(x => x.WaitForConfirms(It.IsAny<TimeSpan>(), out confirmTimedOut))
             .Returns(true);
         model.Setup(x => x.Dispose());
         connection.Setup(x => x.Dispose());
 
-        var topologyBootstrapper = new RabbitMqTopologyBootstrapper(options);
-        var publisher = new RabbitMqApplicationEventPublisher(
+        RabbitMqTopologyBootstrapper topologyBootstrapper = new(options);
+        RabbitMqApplicationEventPublisher publisher = new(
             connectionFactory.Object,
             topologyBootstrapper,
             options,
             NullLogger<RabbitMqApplicationEventPublisher>.Instance);
-        var applicationEvent = ApplicationEventEnvelope.Create(
+        ApplicationEventEnvelope applicationEvent = ApplicationEventEnvelope.Create(
             category: "trading",
             name: "order.created",
             resourceId: Guid.NewGuid().ToString(),
@@ -117,7 +117,7 @@ public sealed class RabbitMqApplicationEventPublisherTests
 
         Assert.Equal("kalshi.integration.trading.order.created", routingKey);
         Assert.NotNull(publishedBody);
-        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(publishedBody!));
+        using JsonDocument json = JsonDocument.Parse(Encoding.UTF8.GetString(publishedBody!));
         Assert.Equal("trading", json.RootElement.GetProperty("category").GetString());
         Assert.Equal("order.created", json.RootElement.GetProperty("name").GetString());
         Assert.Equal("corr-1", json.RootElement.GetProperty("correlationId").GetString());

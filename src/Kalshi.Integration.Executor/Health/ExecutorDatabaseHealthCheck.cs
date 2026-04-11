@@ -4,14 +4,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Kalshi.Integration.Executor.Health;
 
-public sealed class ExecutorDatabaseHealthCheck : IHealthCheck
+public sealed class ExecutorDatabaseHealthCheck(ExecutorDbContext dbContext) : IHealthCheck
 {
-    private readonly ExecutorDbContext _dbContext;
-
-    public ExecutorDatabaseHealthCheck(ExecutorDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly ExecutorDbContext _dbContext = dbContext;
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {

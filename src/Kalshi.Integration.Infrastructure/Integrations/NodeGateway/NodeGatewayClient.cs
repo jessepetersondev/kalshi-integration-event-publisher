@@ -8,40 +8,33 @@ namespace Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 /// <summary>
 /// Calls the node gateway API and normalizes its readiness results for the publisher.
 /// </summary>
-public sealed partial class NodeGatewayClient : INodeGatewayClient
+/// <remarks>
+/// Initializes a new instance of the <see cref="NodeGatewayClient"/> class.
+/// </remarks>
+/// <param name="httpClient">The HTTP client configured for node gateway requests.</param>
+/// <param name="options">The node gateway integration settings.</param>
+/// <param name="logger">The logger for outbound dependency telemetry.</param>
+public sealed partial class NodeGatewayClient(HttpClient httpClient, IOptions<NodeGatewayOptions> options, ILogger<NodeGatewayClient> logger) : INodeGatewayClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly NodeGatewayOptions _options;
-    private readonly ILogger<NodeGatewayClient> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NodeGatewayClient"/> class.
-    /// </summary>
-    /// <param name="httpClient">The HTTP client configured for node gateway requests.</param>
-    /// <param name="options">The node gateway integration settings.</param>
-    /// <param name="logger">The logger for outbound dependency telemetry.</param>
-    public NodeGatewayClient(HttpClient httpClient, IOptions<NodeGatewayOptions> options, ILogger<NodeGatewayClient> logger)
-    {
-        _httpClient = httpClient;
-        _options = options.Value;
-        _logger = logger;
-    }
+    private readonly HttpClient _httpClient = httpClient;
+    private readonly NodeGatewayOptions _options = options.Value;
+    private readonly ILogger<NodeGatewayClient> _logger = logger;
 
     public async Task<NodeGatewayProbeResult> ProbeHealthAsync(CancellationToken cancellationToken = default)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var path = NormalizeHealthPath(_options.HealthPath);
-        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        string path = NormalizeHealthPath(_options.HealthPath);
+        using HttpRequestMessage request = new(HttpMethod.Get, path);
 
         try
         {
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            var correlationId = request.Headers.TryGetValues("x-correlation-id", out var values)
+            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
+            string body = await response.Content.ReadAsStringAsync(cancellationToken);
+            string correlationId = request.Headers.TryGetValues("x-correlation-id", out IEnumerable<string>? values)
                 ? values.FirstOrDefault() ?? string.Empty
                 : string.Empty;
             stopwatch.Stop();
-            var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
+            double elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
             KalshiTelemetry.OutboundDependencyDurationMs.Record(
                 elapsedMs,
@@ -63,7 +56,7 @@ public sealed partial class NodeGatewayClient : INodeGatewayClient
         catch (Exception exception)
         {
             stopwatch.Stop();
-            var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
+            double elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
             KalshiTelemetry.OutboundDependencyDurationMs.Record(
                 elapsedMs,

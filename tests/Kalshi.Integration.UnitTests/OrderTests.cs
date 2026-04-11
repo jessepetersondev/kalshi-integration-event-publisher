@@ -9,8 +9,8 @@ public sealed class OrderTests
     [Fact]
     public void Order_ShouldStartInPendingStatus()
     {
-        var intent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
-        var order = new Order(intent);
+        TradeIntent intent = new("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
+        Order order = new(intent);
 
         Assert.Equal(OrderStatus.Pending, order.CurrentStatus);
         Assert.Equal(0, order.FilledQuantity);
@@ -19,10 +19,10 @@ public sealed class OrderTests
     [Fact]
     public void SetPersistenceState_ShouldOverridePersistedFields()
     {
-        var createdAt = new DateTimeOffset(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
-        var updatedAt = createdAt.AddMinutes(5);
-        var order = new Order(new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout"));
-        var id = Guid.NewGuid();
+        DateTimeOffset createdAt = new(2026, 3, 28, 12, 0, 0, TimeSpan.Zero);
+        DateTimeOffset updatedAt = createdAt.AddMinutes(5);
+        Order order = new(new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout"));
+        Guid id = Guid.NewGuid();
 
         order.SetPersistenceState(id, OrderStatus.Resting, 1, createdAt, updatedAt);
 
@@ -36,8 +36,8 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldAllowPendingToAcceptedToRestingToPartiallyFilledToFilledToSettled()
     {
-        var intent = new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
-        var order = new Order(intent);
+        TradeIntent intent = new("KXBTC", TradeSide.Yes, 2, 0.45m, "Breakout");
+        Order order = new(intent);
 
         order.TransitionTo(OrderStatus.Accepted);
         order.TransitionTo(OrderStatus.Resting);
@@ -52,8 +52,8 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldAllowPendingToDirectFill()
     {
-        var intent = new TradeIntent("KXBTC", TradeSide.No, 1, 0.55m, "Fade");
-        var order = new Order(intent);
+        TradeIntent intent = new("KXBTC", TradeSide.No, 1, 0.55m, "Fade");
+        Order order = new(intent);
 
         order.TransitionTo(OrderStatus.Filled, filledQuantity: 1);
 
@@ -64,8 +64,8 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldRejectIllegalStatusChanges()
     {
-        var intent = new TradeIntent("KXBTC", TradeSide.No, 1, 0.55m, "Fade");
-        var order = new Order(intent);
+        TradeIntent intent = new("KXBTC", TradeSide.No, 1, 0.55m, "Fade");
+        Order order = new(intent);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.Settled, filledQuantity: 1));
     }
@@ -73,7 +73,7 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldRejectNegativeFilledQuantity()
     {
-        var order = CreateAcceptedOrder(quantity: 3);
+        Order order = CreateAcceptedOrder(quantity: 3);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.PartiallyFilled, filledQuantity: -1));
     }
@@ -81,7 +81,7 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldRejectFilledQuantityMovingBackward()
     {
-        var order = CreateAcceptedOrder(quantity: 3);
+        Order order = CreateAcceptedOrder(quantity: 3);
         order.TransitionTo(OrderStatus.PartiallyFilled, filledQuantity: 2);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.PartiallyFilled, filledQuantity: 1));
@@ -90,7 +90,7 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldRejectFilledQuantityExceedingOrderQuantity()
     {
-        var order = CreateAcceptedOrder(quantity: 3);
+        Order order = CreateAcceptedOrder(quantity: 3);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.PartiallyFilled, filledQuantity: 4));
     }
@@ -98,7 +98,7 @@ public sealed class OrderTests
     [Fact]
     public void TransitionTo_ShouldRejectFilledStatusWhenQuantityIsNotComplete()
     {
-        var order = CreateAcceptedOrder(quantity: 3);
+        Order order = CreateAcceptedOrder(quantity: 3);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.Filled, filledQuantity: 2));
     }
@@ -108,7 +108,7 @@ public sealed class OrderTests
     [InlineData(3)]
     public void TransitionTo_ShouldRejectPartiallyFilledWithoutPartialQuantity(int filledQuantity)
     {
-        var order = CreateAcceptedOrder(quantity: 3);
+        Order order = CreateAcceptedOrder(quantity: 3);
 
         Assert.Throws<DomainException>(() => order.TransitionTo(OrderStatus.PartiallyFilled, filledQuantity));
     }
@@ -116,10 +116,10 @@ public sealed class OrderTests
     [Fact]
     public void MarkPublishLifecycleMethods_ShouldUpdatePublishStateAndPreserveFirstCommandEventId()
     {
-        var createdAt = new DateTimeOffset(2026, 4, 4, 10, 0, 0, TimeSpan.Zero);
-        var firstCommandEventId = Guid.NewGuid();
-        var secondCommandEventId = Guid.NewGuid();
-        var order = new Order(new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.40m, "Trend"));
+        DateTimeOffset createdAt = new(2026, 4, 4, 10, 0, 0, TimeSpan.Zero);
+        Guid firstCommandEventId = Guid.NewGuid();
+        Guid secondCommandEventId = Guid.NewGuid();
+        Order order = new(new TradeIntent("KXBTC", TradeSide.Yes, 2, 0.40m, "Trend"));
 
         order.MarkPublishAttempted(createdAt);
         order.MarkPublishConfirmed(firstCommandEventId, createdAt.AddMinutes(1));
@@ -134,9 +134,9 @@ public sealed class OrderTests
     [Fact]
     public void ApplyResult_ShouldUpdateMetadataWithoutChangingStatus()
     {
-        var updatedAt = new DateTimeOffset(2026, 4, 4, 10, 15, 0, TimeSpan.Zero);
-        var commandEventId = Guid.NewGuid();
-        var order = CreateAcceptedOrder(quantity: 3);
+        DateTimeOffset updatedAt = new(2026, 4, 4, 10, 15, 0, TimeSpan.Zero);
+        Guid commandEventId = Guid.NewGuid();
+        Order order = CreateAcceptedOrder(quantity: 3);
 
         order.ApplyResult(
             " order.execution_succeeded ",
@@ -160,9 +160,9 @@ public sealed class OrderTests
     [Fact]
     public void ApplyResult_ShouldPreserveExistingMetadataWhenReplacementValuesAreBlank()
     {
-        var existingCommandEventId = Guid.NewGuid();
-        var replacementCommandEventId = Guid.NewGuid();
-        var order = CreateAcceptedOrder(quantity: 3);
+        Guid existingCommandEventId = Guid.NewGuid();
+        Guid replacementCommandEventId = Guid.NewGuid();
+        Order order = CreateAcceptedOrder(quantity: 3);
         order.ApplyResult(
             "order.execution_succeeded",
             filledQuantity: 1,
@@ -188,14 +188,14 @@ public sealed class OrderTests
     [Fact]
     public void ApplyResult_ShouldRejectBlankResultStatus()
     {
-        var order = CreateAcceptedOrder(quantity: 1);
+        Order order = CreateAcceptedOrder(quantity: 1);
 
         Assert.Throws<DomainException>(() => order.ApplyResult(" "));
     }
 
     private static Order CreateAcceptedOrder(int quantity)
     {
-        var order = new Order(new TradeIntent("KXBTC", TradeSide.Yes, quantity, 0.40m, "Trend"));
+        Order order = new(new TradeIntent("KXBTC", TradeSide.Yes, quantity, 0.40m, "Trend"));
         order.TransitionTo(OrderStatus.Accepted);
         return order;
     }

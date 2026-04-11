@@ -5,14 +5,9 @@ namespace Kalshi.Integration.Executor.Persistence;
 /// <summary>
 /// Persists executor-local operational issues for monitoring and repair workflows.
 /// </summary>
-public sealed class ExecutorOperationalIssueRecorder
+public sealed class ExecutorOperationalIssueRecorder(ExecutorDbContext dbContext)
 {
-    private readonly ExecutorDbContext _dbContext;
-
-    public ExecutorOperationalIssueRecorder(ExecutorDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly ExecutorDbContext _dbContext = dbContext;
 
     public async Task AddAsync(
         string category,

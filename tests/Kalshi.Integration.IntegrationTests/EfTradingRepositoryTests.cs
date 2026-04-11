@@ -13,7 +13,7 @@ public sealed class EfTradingRepositoryTests
 {
     private static KalshiIntegrationDbContext CreateDbContext(string name)
     {
-        var options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
+        DbContextOptions<KalshiIntegrationDbContext> options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
             .UseInMemoryDatabase(name)
             .Options;
 
@@ -22,11 +22,11 @@ public sealed class EfTradingRepositoryTests
 
     private static KalshiIntegrationDbContext CreateSqliteDbContext(SqliteConnection connection)
     {
-        var options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
+        DbContextOptions<KalshiIntegrationDbContext> options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        var dbContext = new KalshiIntegrationDbContext(options);
+        KalshiIntegrationDbContext dbContext = new(options);
         dbContext.Database.EnsureCreated();
         return dbContext;
     }
@@ -34,22 +34,22 @@ public sealed class EfTradingRepositoryTests
     [Fact]
     public async Task Repository_ShouldPersistTradeIntentAndOrderData()
     {
-        await using var dbContext = CreateDbContext(Guid.NewGuid().ToString("N"));
-        var logger = new TestLogger<EfTradingRepository>();
-        var repository = new EfTradingRepository(dbContext, logger);
+        await using KalshiIntegrationDbContext dbContext = CreateDbContext(Guid.NewGuid().ToString("N"));
+        TestLogger<EfTradingRepository> logger = new();
+        EfTradingRepository repository = new(dbContext, logger);
 
-        var tradeIntent = new TradeIntent("KXBTC-REPO", TradeSide.Yes, 2, 0.42m, "RepoTest");
+        TradeIntent tradeIntent = new("KXBTC-REPO", TradeSide.Yes, 2, 0.42m, "RepoTest");
         await repository.AddTradeIntentAsync(tradeIntent);
 
-        var order = new Order(tradeIntent);
+        Order order = new(tradeIntent);
         await repository.AddOrderAsync(order);
         await repository.AddOrderEventAsync(new ExecutionEvent(order.Id, order.CurrentStatus, order.FilledQuantity, order.CreatedAt));
         await repository.UpsertPositionSnapshotAsync(new PositionSnapshot(tradeIntent.Ticker, tradeIntent.Side, 0, tradeIntent.LimitPrice, DateTimeOffset.UtcNow));
 
-        var storedIntent = await repository.GetTradeIntentAsync(tradeIntent.Id);
-        var storedOrder = await repository.GetOrderAsync(order.Id);
-        var storedEvents = await repository.GetOrderEventsAsync(order.Id);
-        var positions = await repository.GetPositionsAsync();
+        TradeIntent? storedIntent = await repository.GetTradeIntentAsync(tradeIntent.Id);
+        Order? storedOrder = await repository.GetOrderAsync(order.Id);
+        IReadOnlyList<ExecutionEvent> storedEvents = await repository.GetOrderEventsAsync(order.Id);
+        IReadOnlyList<PositionSnapshot> positions = await repository.GetPositionsAsync();
 
         Assert.NotNull(storedIntent);
         Assert.NotNull(storedOrder);
@@ -70,14 +70,14 @@ public sealed class EfTradingRepositoryTests
     [Fact]
     public async Task FindMatchingCancelTradeIntentAsync_ShouldReturnLatestMatch_WithSqlite()
     {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await using SqliteConnection connection = new("Data Source=:memory:");
         await connection.OpenAsync();
-        await using var dbContext = CreateSqliteDbContext(connection);
-        var repository = new EfTradingRepository(dbContext, new TestLogger<EfTradingRepository>());
+        await using KalshiIntegrationDbContext dbContext = CreateSqliteDbContext(connection);
+        EfTradingRepository repository = new(dbContext, new TestLogger<EfTradingRepository>());
 
-        var targetPublisherOrderId = Guid.NewGuid();
-        var targetClientOrderId = "client-order-123";
-        var older = new TradeIntent(
+        Guid targetPublisherOrderId = Guid.NewGuid();
+        string targetClientOrderId = "client-order-123";
+        TradeIntent older = new(
             "KXBTC-CANCEL-OLD",
             side: null,
             quantity: null,
@@ -91,7 +91,7 @@ public sealed class EfTradingRepositoryTests
             targetClientOrderId: targetClientOrderId,
             correlationId: "cancel-old",
             createdAt: new DateTimeOffset(2026, 4, 10, 13, 30, 0, TimeSpan.Zero));
-        var newer = new TradeIntent(
+        TradeIntent newer = new(
             "KXBTC-CANCEL-NEW",
             side: null,
             quantity: null,
@@ -109,7 +109,7 @@ public sealed class EfTradingRepositoryTests
         await repository.AddTradeIntentAsync(older);
         await repository.AddTradeIntentAsync(newer);
 
-        var result = await repository.FindMatchingCancelTradeIntentAsync(targetPublisherOrderId, targetClientOrderId, targetExternalOrderId: null);
+        TradeIntent? result = await repository.FindMatchingCancelTradeIntentAsync(targetPublisherOrderId, targetClientOrderId, targetExternalOrderId: null);
 
         Assert.NotNull(result);
         Assert.Equal(newer.Id, result!.Id);

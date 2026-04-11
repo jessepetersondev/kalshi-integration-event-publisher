@@ -11,30 +11,30 @@ public sealed class NodeGatewayClientTests
     [Fact]
     public async Task CorrelationPropagationHandler_ShouldCopyCorrelationIdFromIncomingRequest()
     {
-        var httpContext = new DefaultHttpContext();
+        DefaultHttpContext httpContext = new();
         httpContext.Request.Headers["x-correlation-id"] = "corr-123";
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = httpContext };
-        var innerHandler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        HttpContextAccessor httpContextAccessor = new() { HttpContext = httpContext };
+        CapturingHandler innerHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("{\"status\":\"ok\"}")
         });
 
-        var handler = new CorrelationPropagationHandler(httpContextAccessor)
+        CorrelationPropagationHandler handler = new(httpContextAccessor)
         {
             InnerHandler = innerHandler,
         };
 
-        using var httpClient = new HttpClient(handler)
+        using HttpClient httpClient = new(handler)
         {
             BaseAddress = new Uri("http://localhost:3001"),
         };
 
-        var client = new NodeGatewayClient(
+        NodeGatewayClient client = new(
             httpClient,
             Options.Create(new NodeGatewayOptions { BaseUrl = "http://localhost:3001", HealthPath = "/health", TimeoutSeconds = 5, RetryAttempts = 0 }),
             NullLogger<NodeGatewayClient>.Instance);
 
-        var result = await client.ProbeHealthAsync();
+        NodeGatewayProbeResult result = await client.ProbeHealthAsync();
 
         Assert.True(result.Healthy);
         Assert.Equal("corr-123", result.CorrelationId);
@@ -44,22 +44,22 @@ public sealed class NodeGatewayClientTests
     [Fact]
     public async Task NodeGatewayClient_ShouldReturnUnhealthyResultForNonSuccessStatus()
     {
-        var innerHandler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway)
+        CapturingHandler innerHandler = new(_ => new HttpResponseMessage(HttpStatusCode.BadGateway)
         {
             Content = new StringContent("gateway down")
         });
 
-        using var httpClient = new HttpClient(innerHandler)
+        using HttpClient httpClient = new(innerHandler)
         {
             BaseAddress = new Uri("http://localhost:3001"),
         };
 
-        var client = new NodeGatewayClient(
+        NodeGatewayClient client = new(
             httpClient,
             Options.Create(new NodeGatewayOptions { BaseUrl = "http://localhost:3001", HealthPath = "/health", TimeoutSeconds = 5, RetryAttempts = 0 }),
             NullLogger<NodeGatewayClient>.Instance);
 
-        var result = await client.ProbeHealthAsync();
+        NodeGatewayProbeResult result = await client.ProbeHealthAsync();
 
         Assert.False(result.Healthy);
         Assert.Equal(502, result.StatusCode);
@@ -69,26 +69,26 @@ public sealed class NodeGatewayClientTests
     [Fact]
     public async Task CorrelationPropagationHandler_ShouldFallBackToCurrentActivityTraceId()
     {
-        var httpContextAccessor = new HttpContextAccessor();
-        var innerHandler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        HttpContextAccessor httpContextAccessor = new();
+        CapturingHandler innerHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("{\"status\":\"ok\"}")
         });
 
-        var handler = new CorrelationPropagationHandler(httpContextAccessor)
+        CorrelationPropagationHandler handler = new(httpContextAccessor)
         {
             InnerHandler = innerHandler,
         };
 
-        using var httpClient = new HttpClient(handler)
+        using HttpClient httpClient = new(handler)
         {
             BaseAddress = new Uri("http://localhost:3001"),
         };
 
-        using var activity = new System.Diagnostics.Activity("test-request");
+        using System.Diagnostics.Activity activity = new("test-request");
         activity.Start();
 
-        var client = new NodeGatewayClient(
+        NodeGatewayClient client = new(
             httpClient,
             Options.Create(new NodeGatewayOptions { BaseUrl = "http://localhost:3001", HealthPath = "/health", TimeoutSeconds = 5, RetryAttempts = 0 }),
             NullLogger<NodeGatewayClient>.Instance);
@@ -101,14 +101,14 @@ public sealed class NodeGatewayClientTests
     [Fact]
     public async Task NodeGatewayClient_ShouldThrowWhenDependencyCallFails()
     {
-        var innerHandler = new ThrowingHandler(new HttpRequestException("node gateway unavailable"));
+        ThrowingHandler innerHandler = new(new HttpRequestException("node gateway unavailable"));
 
-        using var httpClient = new HttpClient(innerHandler)
+        using HttpClient httpClient = new(innerHandler)
         {
             BaseAddress = new Uri("http://localhost:3001"),
         };
 
-        var client = new NodeGatewayClient(
+        NodeGatewayClient client = new(
             httpClient,
             Options.Create(new NodeGatewayOptions { BaseUrl = "http://localhost:3001", HealthPath = "/health", TimeoutSeconds = 5, RetryAttempts = 0 }),
             NullLogger<NodeGatewayClient>.Instance);
@@ -116,14 +116,9 @@ public sealed class NodeGatewayClientTests
         await Assert.ThrowsAsync<HttpRequestException>(() => client.ProbeHealthAsync());
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
+    private sealed class CapturingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory;
-
-        public CapturingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory = responseFactory;
 
         public HttpRequestMessage? LastRequest { get; private set; }
 
@@ -134,14 +129,9 @@ public sealed class NodeGatewayClientTests
         }
     }
 
-    private sealed class ThrowingHandler : HttpMessageHandler
+    private sealed class ThrowingHandler(Exception exception) : HttpMessageHandler
     {
-        private readonly Exception _exception;
-
-        public ThrowingHandler(Exception exception)
-        {
-            _exception = exception;
-        }
+        private readonly Exception _exception = exception;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

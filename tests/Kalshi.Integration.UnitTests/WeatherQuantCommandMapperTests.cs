@@ -9,10 +9,10 @@ public sealed class WeatherQuantCommandMapperTests
     [Fact]
     public void MapTradeIntentAttributes_ShouldIncludeMigratedWeatherQuantFields()
     {
-        var tradeIntentId = Guid.NewGuid();
-        var targetPublisherOrderId = Guid.NewGuid();
-        var createdAt = new DateTimeOffset(2026, 4, 4, 10, 0, 0, TimeSpan.Zero);
-        var response = new TradeIntentResponse(
+        Guid tradeIntentId = Guid.NewGuid();
+        Guid targetPublisherOrderId = Guid.NewGuid();
+        DateTimeOffset createdAt = new(2026, 4, 4, 10, 0, 0, TimeSpan.Zero);
+        TradeIntentResponse response = new(
             tradeIntentId,
             "KXBTC",
             "yes",
@@ -30,9 +30,9 @@ public sealed class WeatherQuantCommandMapperTests
             "client-1",
             "external-1",
             createdAt,
-            new RiskDecisionResponse(true, "accepted", Array.Empty<string>(), 10, false));
+            new RiskDecisionResponse(true, "accepted", [], 10, false));
 
-        var attributes = WeatherQuantCommandMapper.MapTradeIntentAttributes(response);
+        IReadOnlyDictionary<string, string?> attributes = WeatherQuantCommandMapper.MapTradeIntentAttributes(response);
 
         Assert.Equal("weather-quant-command.v1", attributes["commandSchemaVersion"]);
         Assert.Equal("kalshi-weather-quant", attributes["originService"]);
@@ -55,7 +55,7 @@ public sealed class WeatherQuantCommandMapperTests
     [Fact]
     public void CreateTradeIntentEvent_ShouldUseCanonicalEnvelopeMetadata()
     {
-        var response = new TradeIntentResponse(
+        TradeIntentResponse response = new(
             Guid.NewGuid(),
             "KXETH",
             null,
@@ -73,9 +73,9 @@ public sealed class WeatherQuantCommandMapperTests
             "client-2",
             "external-2",
             DateTimeOffset.UtcNow,
-            new RiskDecisionResponse(true, "accepted", Array.Empty<string>(), 10, false));
+            new RiskDecisionResponse(true, "accepted", [], 10, false));
 
-        var envelope = WeatherQuantCommandMapper.CreateTradeIntentEvent(response, "corr-2", "idem-2");
+        Application.Events.ApplicationEventEnvelope envelope = WeatherQuantCommandMapper.CreateTradeIntentEvent(response, "corr-2", "idem-2");
 
         Assert.Equal("trading", envelope.Category);
         Assert.Equal("trade-intent.created", envelope.Name);
@@ -90,11 +90,11 @@ public sealed class WeatherQuantCommandMapperTests
     [Fact]
     public void MapOrderAttributes_ShouldIncludePublisherOrderIdentity()
     {
-        var orderId = Guid.NewGuid();
-        var tradeIntentId = Guid.NewGuid();
-        var targetPublisherOrderId = Guid.NewGuid();
-        var commandEventId = Guid.NewGuid();
-        var response = new OrderResponse(
+        Guid orderId = Guid.NewGuid();
+        Guid tradeIntentId = Guid.NewGuid();
+        Guid targetPublisherOrderId = Guid.NewGuid();
+        Guid commandEventId = Guid.NewGuid();
+        OrderResponse response = new(
             orderId,
             tradeIntentId,
             "KXBTC",
@@ -125,7 +125,7 @@ public sealed class WeatherQuantCommandMapperTests
             new[] { new OrderEventResponse("accepted", 1, DateTimeOffset.UtcNow) },
             new[] { new OrderLifecycleEventResponse("publish_confirmed", null, DateTimeOffset.UtcNow) });
 
-        var attributes = WeatherQuantCommandMapper.MapOrderAttributes(response);
+        IReadOnlyDictionary<string, string?> attributes = WeatherQuantCommandMapper.MapOrderAttributes(response);
 
         Assert.Equal("entry", attributes["actionType"]);
         Assert.Equal(tradeIntentId.ToString(), attributes["tradeIntentId"]);
@@ -142,7 +142,7 @@ public sealed class WeatherQuantCommandMapperTests
     [Fact]
     public void CreateOrderEvent_ShouldUseCanonicalEnvelopeMetadata()
     {
-        var response = new OrderResponse(
+        OrderResponse response = new(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "KXBTC",
@@ -173,7 +173,7 @@ public sealed class WeatherQuantCommandMapperTests
             Array.Empty<OrderEventResponse>(),
             Array.Empty<OrderLifecycleEventResponse>());
 
-        var envelope = WeatherQuantCommandMapper.CreateOrderEvent(response, "corr-4", "idem-4");
+        Application.Events.ApplicationEventEnvelope envelope = WeatherQuantCommandMapper.CreateOrderEvent(response, "corr-4", "idem-4");
 
         Assert.Equal("trading", envelope.Category);
         Assert.Equal("order.created", envelope.Name);

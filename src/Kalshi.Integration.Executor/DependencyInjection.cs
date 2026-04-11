@@ -20,8 +20,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddExecutor(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Executor") ?? "Data Source=kalshi-integration-executor.db";
-        var kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
+        string connectionString = configuration.GetConnectionString("Executor") ?? "Data Source=kalshi-integration-executor.db";
+        KalshiApiOptions kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
 
         services.AddOptions<RabbitMqOptions>()
             .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
@@ -42,7 +42,7 @@ public static class DependencyInjection
 
         services.AddHttpClient<IKalshiApiClient, KalshiApiClient>((serviceProvider, client) =>
             {
-                var options = serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>().Value;
+                KalshiApiOptions options = serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>().Value;
                 client.BaseAddress = new Uri($"{options.BaseUrl.TrimEnd('/')}/", UriKind.Absolute);
                 client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
             })
@@ -56,7 +56,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IConnectionFactory>(sp =>
         {
-            var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+            RabbitMqOptions options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
             return new ConnectionFactory
             {
                 HostName = options.HostName,

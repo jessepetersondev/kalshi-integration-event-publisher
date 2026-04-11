@@ -11,22 +11,17 @@ namespace Kalshi.Integration.Api.Controllers;
 /// Exposes operator-facing read models for orders, positions, events, issues,
 /// and audit history without mixing that query logic into write controllers.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="DashboardController"/> class.
+/// </remarks>
+/// <param name="dashboardService">The service that assembles dashboard read models.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/dashboard")]
 [Authorize(Policy = "operations.read")]
-public sealed class DashboardController : ControllerBase
+public sealed class DashboardController(DashboardService dashboardService) : ControllerBase
 {
-    private readonly DashboardService _dashboardService;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DashboardController"/> class.
-    /// </summary>
-    /// <param name="dashboardService">The service that assembles dashboard read models.</param>
-    public DashboardController(DashboardService dashboardService)
-    {
-        _dashboardService = dashboardService;
-    }
+    private readonly DashboardService _dashboardService = dashboardService;
 
     /// <summary>
     /// Returns the current order summaries used by the operator dashboard.
@@ -37,7 +32,7 @@ public sealed class DashboardController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<DashboardOrderSummaryResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetOrders(CancellationToken cancellationToken)
     {
-        var orders = await _dashboardService.GetOrdersAsync(cancellationToken);
+        IReadOnlyList<DashboardOrderSummaryResponse> orders = await _dashboardService.GetOrdersAsync(cancellationToken);
         return Ok(orders);
     }
 
@@ -50,7 +45,7 @@ public sealed class DashboardController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<PositionResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPositions(CancellationToken cancellationToken)
     {
-        var positions = await _dashboardService.GetPositionsAsync(cancellationToken);
+        IReadOnlyList<PositionResponse> positions = await _dashboardService.GetPositionsAsync(cancellationToken);
         return Ok(positions);
     }
 
@@ -64,7 +59,7 @@ public sealed class DashboardController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<DashboardEventResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetEvents([FromQuery] int limit = 50, CancellationToken cancellationToken = default)
     {
-        var events = await _dashboardService.GetEventsAsync(Math.Clamp(limit, 1, 200), cancellationToken);
+        IReadOnlyList<DashboardEventResponse> events = await _dashboardService.GetEventsAsync(Math.Clamp(limit, 1, 200), cancellationToken);
         return Ok(events);
     }
 
@@ -79,7 +74,7 @@ public sealed class DashboardController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<DashboardIssueResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetIssues([FromQuery] string? category = null, [FromQuery] int hours = 24, CancellationToken cancellationToken = default)
     {
-        var issues = await _dashboardService.GetIssuesAsync(category, Math.Clamp(hours, 1, 168), cancellationToken);
+        IReadOnlyList<DashboardIssueResponse> issues = await _dashboardService.GetIssuesAsync(category, Math.Clamp(hours, 1, 168), cancellationToken);
         return Ok(issues);
     }
 
@@ -95,7 +90,7 @@ public sealed class DashboardController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<DashboardAuditRecordResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAuditRecords([FromQuery] string? category = null, [FromQuery] int hours = 24, [FromQuery] int limit = 100, CancellationToken cancellationToken = default)
     {
-        var records = await _dashboardService.GetAuditRecordsAsync(category, Math.Clamp(hours, 1, 168), Math.Clamp(limit, 1, 500), cancellationToken);
+        IReadOnlyList<DashboardAuditRecordResponse> records = await _dashboardService.GetAuditRecordsAsync(category, Math.Clamp(hours, 1, 168), Math.Clamp(limit, 1, 500), cancellationToken);
         return Ok(records);
     }
 }

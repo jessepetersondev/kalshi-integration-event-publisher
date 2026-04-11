@@ -6,14 +6,9 @@ namespace Kalshi.Integration.Infrastructure.Messaging;
 /// Declares the shared publisher and executor RabbitMQ topology so messages always
 /// have durable queues bound before they are published or consumed.
 /// </summary>
-public sealed class RabbitMqTopologyBootstrapper
+public sealed class RabbitMqTopologyBootstrapper(Microsoft.Extensions.Options.IOptions<RabbitMqOptions> options)
 {
-    private readonly RabbitMqOptions _options;
-
-    public RabbitMqTopologyBootstrapper(Microsoft.Extensions.Options.IOptions<RabbitMqOptions> options)
-    {
-        _options = options.Value;
-    }
+    private readonly RabbitMqOptions _options = options.Value;
 
     public void EnsureTopology(IModel channel)
     {

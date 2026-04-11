@@ -24,7 +24,7 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddApplication_ShouldRegisterServicesAndBindRiskOptions()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
         services.AddSingleton(Mock.Of<ITradeIntentRepository>());
         services.AddSingleton(Mock.Of<IOrderRepository>());
@@ -33,7 +33,7 @@ public sealed class DependencyInjectionTests
         services.AddSingleton(Mock.Of<IAuditRecordStore>());
         services.AddSingleton(Mock.Of<IIdempotencyStore>());
 
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"{RiskOptions.SectionName}:MaxOrderSize"] = "7",
@@ -43,8 +43,8 @@ public sealed class DependencyInjectionTests
 
         services.AddApplication(configuration);
 
-        using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<RiskOptions>>().Value;
+        using ServiceProvider provider = services.BuildServiceProvider();
+        RiskOptions options = provider.GetRequiredService<IOptions<RiskOptions>>().Value;
 
         Assert.Equal(7, options.MaxOrderSize);
         Assert.False(options.RejectDuplicateCorrelationIds);
@@ -58,11 +58,11 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddInfrastructure_ShouldRegisterRepositoryStoresPublisherAndHealthChecks()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
 
-        var databasePath = Path.Combine(Path.GetTempPath(), $"kalshi-di-{Guid.NewGuid():N}.db");
-        var configuration = new ConfigurationBuilder()
+        string databasePath = Path.Combine(Path.GetTempPath(), $"kalshi-di-{Guid.NewGuid():N}.db");
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:KalshiIntegration"] = $"Data Source={databasePath}"
@@ -71,11 +71,11 @@ public sealed class DependencyInjectionTests
 
         services.AddInfrastructure(configuration);
 
-        using (var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        using (ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
         {
-            using var scope = provider.CreateScope();
+            using IServiceScope scope = provider.CreateScope();
 
-            var concreteRepository = scope.ServiceProvider.GetRequiredService<EfTradingRepository>();
+            EfTradingRepository concreteRepository = scope.ServiceProvider.GetRequiredService<EfTradingRepository>();
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<ITradeIntentRepository>());
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<IOrderRepository>());
             Assert.Same(concreteRepository, scope.ServiceProvider.GetRequiredService<IPositionSnapshotRepository>());
@@ -83,9 +83,9 @@ public sealed class DependencyInjectionTests
             Assert.IsType<EfAuditRecordStore>(scope.ServiceProvider.GetRequiredService<IAuditRecordStore>());
             Assert.IsType<EfIdempotencyStore>(scope.ServiceProvider.GetRequiredService<IIdempotencyStore>());
 
-            var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
-            var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<KalshiIntegrationDbContext>>();
-            var databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+            KalshiIntegrationDbContext dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+            IDbContextFactory<KalshiIntegrationDbContext> dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<KalshiIntegrationDbContext>>();
+            DatabaseOptions databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
             Assert.NotNull(dbContext);
             Assert.NotNull(dbContextFactory);
@@ -94,8 +94,8 @@ public sealed class DependencyInjectionTests
             Assert.True(databaseOptions.ApplyMigrationsOnStartup);
             Assert.NotNull(provider.GetRequiredService<HealthCheckService>());
 
-            var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
-            var concretePublisher = provider.GetRequiredService<InMemoryApplicationEventPublisher>();
+            IApplicationEventPublisher publisher = provider.GetRequiredService<IApplicationEventPublisher>();
+            InMemoryApplicationEventPublisher concretePublisher = provider.GetRequiredService<InMemoryApplicationEventPublisher>();
             Assert.Same(concretePublisher, publisher);
         }
 
@@ -108,10 +108,10 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddInfrastructure_ShouldUseSqlServerProvider_WhenConfigured()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
 
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:KalshiIntegration"] = "Server=tcp:kalshi-sql.database.windows.net,1433;Initial Catalog=KalshiIntegrationEventPublisher;User ID=kalshi;Password=StrongPassword!123;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",
@@ -122,11 +122,11 @@ public sealed class DependencyInjectionTests
 
         services.AddInfrastructure(configuration);
 
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        using var scope = provider.CreateScope();
+        using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using IServiceScope scope = provider.CreateScope();
 
-        var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
-        var databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+        KalshiIntegrationDbContext dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+        DatabaseOptions databaseOptions = provider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
         Assert.Contains("SqlServer", dbContext.Database.ProviderName, StringComparison.Ordinal);
         Assert.Equal(DatabaseProviders.SqlServer, databaseOptions.Provider);
@@ -136,11 +136,11 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddInfrastructure_ShouldResolveRabbitMqPublisher_WhenConfigured()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
 
-        var databasePath = Path.Combine(Path.GetTempPath(), $"kalshi-di-rabbit-{Guid.NewGuid():N}.db");
-        var configuration = new ConfigurationBuilder()
+        string databasePath = Path.Combine(Path.GetTempPath(), $"kalshi-di-rabbit-{Guid.NewGuid():N}.db");
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:KalshiIntegration"] = $"Data Source={databasePath}",
@@ -151,9 +151,9 @@ public sealed class DependencyInjectionTests
 
         services.AddInfrastructure(configuration);
 
-        using (var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        using (ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
         {
-            var publisher = provider.GetRequiredService<IApplicationEventPublisher>();
+            IApplicationEventPublisher publisher = provider.GetRequiredService<IApplicationEventPublisher>();
             Assert.IsType<RabbitMqApplicationEventPublisher>(publisher);
             Assert.NotNull(provider.GetRequiredService<IConnectionFactory>());
             Assert.NotNull(provider.GetRequiredService<INodeGatewayClient>());
@@ -168,7 +168,7 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddApplication_ShouldRejectInvalidRiskOptions()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
         services.AddSingleton(Mock.Of<ITradeIntentRepository>());
         services.AddSingleton(Mock.Of<IOrderRepository>());
@@ -177,7 +177,7 @@ public sealed class DependencyInjectionTests
         services.AddSingleton(Mock.Of<IAuditRecordStore>());
         services.AddSingleton(Mock.Of<IIdempotencyStore>());
 
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"{RiskOptions.SectionName}:MaxOrderSize"] = "0",
@@ -186,17 +186,17 @@ public sealed class DependencyInjectionTests
 
         services.AddApplication(configuration);
 
-        using var provider = services.BuildServiceProvider();
+        using ServiceProvider provider = services.BuildServiceProvider();
         Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<RiskOptions>>().Value);
     }
 
     [Fact]
     public void AddInfrastructure_ShouldRejectUnsupportedDatabaseProvider()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
 
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:KalshiIntegration"] = "Data Source=:memory:",
@@ -210,10 +210,10 @@ public sealed class DependencyInjectionTests
     [Fact]
     public void AddInfrastructure_ShouldRejectInvalidNodeGatewayBaseUrl()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging();
 
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:KalshiIntegration"] = "Data Source=:memory:",
@@ -223,7 +223,7 @@ public sealed class DependencyInjectionTests
 
         services.AddInfrastructure(configuration);
 
-        using var provider = services.BuildServiceProvider();
+        using ServiceProvider provider = services.BuildServiceProvider();
         Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<NodeGatewayOptions>>().Value);
     }
 }

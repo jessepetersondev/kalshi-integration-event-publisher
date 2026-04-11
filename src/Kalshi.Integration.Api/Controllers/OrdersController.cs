@@ -16,44 +16,34 @@ namespace Kalshi.Integration.Api.Controllers;
 /// Handles order creation and retrieval endpoints, including idempotency checks,
 /// audit records, and application-event publication.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="OrdersController"/> class.
+/// </remarks>
+/// <param name="orderSubmissionService">The service that creates orders and queues durable order commands.</param>
+/// <param name="tradingQueryService">The service that reads order projections.</param>
+/// <param name="auditRecordStore">The store used to persist audit records.</param>
+/// <param name="outboxDispatcher">The dispatcher used for best-effort immediate outbox draining.</param>
+/// <param name="idempotencyService">The service used to detect duplicate order submissions.</param>
+/// <param name="logger">The logger for the controller.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/orders")]
-public sealed class OrdersController : ControllerBase
+public sealed class OrdersController(
+    OrderSubmissionService orderSubmissionService,
+    TradingQueryService tradingQueryService,
+    IAuditRecordStore auditRecordStore,
+    PublisherCommandOutboxDispatcher outboxDispatcher,
+    IdempotencyService idempotencyService,
+    ILogger<OrdersController> logger) : ControllerBase
 {
     private const string IdempotencyScope = "orders";
 
-    private readonly OrderSubmissionService _orderSubmissionService;
-    private readonly TradingQueryService _tradingQueryService;
-    private readonly IAuditRecordStore _auditRecordStore;
-    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher;
-    private readonly IdempotencyService _idempotencyService;
-    private readonly ILogger<OrdersController> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OrdersController"/> class.
-    /// </summary>
-    /// <param name="orderSubmissionService">The service that creates orders and queues durable order commands.</param>
-    /// <param name="tradingQueryService">The service that reads order projections.</param>
-    /// <param name="auditRecordStore">The store used to persist audit records.</param>
-    /// <param name="outboxDispatcher">The dispatcher used for best-effort immediate outbox draining.</param>
-    /// <param name="idempotencyService">The service used to detect duplicate order submissions.</param>
-    /// <param name="logger">The logger for the controller.</param>
-    public OrdersController(
-        OrderSubmissionService orderSubmissionService,
-        TradingQueryService tradingQueryService,
-        IAuditRecordStore auditRecordStore,
-        PublisherCommandOutboxDispatcher outboxDispatcher,
-        IdempotencyService idempotencyService,
-        ILogger<OrdersController> logger)
-    {
-        _orderSubmissionService = orderSubmissionService;
-        _tradingQueryService = tradingQueryService;
-        _auditRecordStore = auditRecordStore;
-        _outboxDispatcher = outboxDispatcher;
-        _idempotencyService = idempotencyService;
-        _logger = logger;
-    }
+    private readonly OrderSubmissionService _orderSubmissionService = orderSubmissionService;
+    private readonly TradingQueryService _tradingQueryService = tradingQueryService;
+    private readonly IAuditRecordStore _auditRecordStore = auditRecordStore;
+    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher = outboxDispatcher;
+    private readonly IdempotencyService _idempotencyService = idempotencyService;
+    private readonly ILogger<OrdersController> _logger = logger;
 
     /// <summary>
     /// Creates an order for an existing trade intent.
@@ -68,16 +58,16 @@ public sealed class OrdersController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
     {
-        var correlationId = RequestMetadata.ResolveCorrelationId(HttpContext);
-        var idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext);
+        string correlationId = RequestMetadata.ResolveCorrelationId(HttpContext);
+        string? idempotencyKey = RequestMetadata.ResolveIdempotencyKey(HttpContext);
 
-        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        using IDisposable? scope = _logger.BeginScope(new Dictionary<string, object?>
         {
             ["CorrelationId"] = correlationId,
             ["IdempotencyKey"] = idempotencyKey,
         });
 
-        var replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
+        IdempotencyLookupResult replay = await _idempotencyService.LookupAsync(IdempotencyScope, idempotencyKey, request, cancellationToken);
         if (replay.Status == IdempotencyLookupStatus.Conflict)
         {
             _logger.LogWarning("Rejected order request because idempotency key {IdempotencyKey} was reused with a different payload.", idempotencyKey);
@@ -121,7 +111,7 @@ public sealed class OrdersController : ControllerBase
 
         try
         {
-            var response = await _orderSubmissionService.SubmitOrderAsync(request, correlationId, idempotencyKey, cancellationToken: cancellationToken);
+            OrderResponse response = await _orderSubmissionService.SubmitOrderAsync(request, correlationId, idempotencyKey, cancellationToken: cancellationToken);
             _logger.LogInformation("Created order {OrderId} for trade intent {TradeIntentId}.", response.Id, response.TradeIntentId);
 
             await _auditRecordStore.AddAsync(
@@ -147,7 +137,7 @@ public sealed class OrdersController : ControllerBase
                 _logger.LogWarning(exception, "Best-effort immediate dispatch failed for order command {CommandEventId}; background outbox retry will continue.", response.CommandEventId);
             }
 
-            var refreshed = await _tradingQueryService.GetOrderAsync(response.Id, cancellationToken) ?? response;
+            OrderResponse refreshed = await _tradingQueryService.GetOrderAsync(response.Id, cancellationToken) ?? response;
             await _idempotencyService.SaveResponseAsync(IdempotencyScope, idempotencyKey, request, StatusCodes.Status201Created, refreshed, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = refreshed.Id, version = "1" }, refreshed);
         }
@@ -211,7 +201,7 @@ public sealed class OrdersController : ControllerBase
         [FromQuery] int limit = 50,
         CancellationToken cancellationToken = default)
     {
-        var outcomes = await _tradingQueryService.GetOrderOutcomesAsync(
+        IReadOnlyList<OrderOutcomeResponse> outcomes = await _tradingQueryService.GetOrderOutcomesAsync(
             orderId,
             correlationId,
             originService,
@@ -237,7 +227,7 @@ public sealed class OrdersController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var order = await _tradingQueryService.GetOrderAsync(id, cancellationToken);
+        OrderResponse? order = await _tradingQueryService.GetOrderAsync(id, cancellationToken);
         if (order is null)
         {
             return Problem(title: "Order not found", detail: $"Order '{id}' was not found.", statusCode: StatusCodes.Status404NotFound);

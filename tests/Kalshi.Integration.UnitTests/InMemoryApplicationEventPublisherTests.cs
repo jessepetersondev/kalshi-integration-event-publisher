@@ -8,16 +8,16 @@ public sealed class InMemoryApplicationEventPublisherTests
     [Fact]
     public async Task PublishAsync_ShouldDispatchEventToInProcessSubscribersAndRetainHistory()
     {
-        var publisher = new InMemoryApplicationEventPublisher();
-        var received = new List<ApplicationEventEnvelope>();
+        InMemoryApplicationEventPublisher publisher = new();
+        List<ApplicationEventEnvelope> received = [];
 
-        using var subscription = publisher.Subscribe((applicationEvent, cancellationToken) =>
+        using IDisposable subscription = publisher.Subscribe((applicationEvent, cancellationToken) =>
         {
             received.Add(applicationEvent);
             return Task.CompletedTask;
         });
 
-        var applicationEvent = ApplicationEventEnvelope.Create(
+        ApplicationEventEnvelope applicationEvent = ApplicationEventEnvelope.Create(
             category: "trading",
             name: "order.created",
             resourceId: Guid.NewGuid().ToString(),
@@ -31,7 +31,7 @@ public sealed class InMemoryApplicationEventPublisherTests
 
         await publisher.PublishAsync(applicationEvent);
 
-        var publishedEvents = publisher.GetPublishedEvents();
+        IReadOnlyList<ApplicationEventEnvelope> publishedEvents = publisher.GetPublishedEvents();
         Assert.Single(received);
         Assert.Single(publishedEvents);
         Assert.Equal(applicationEvent, received[0]);

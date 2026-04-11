@@ -22,8 +22,8 @@ public sealed class ExecutionReliabilityPolicy
 
     public TimeSpan CalculateRetryDelay(int attemptNumber)
     {
-        var exponent = Math.Max(0, attemptNumber - 1);
-        var baseDelayMs = Math.Min(30000, 500 * Math.Pow(2, exponent));
+        int exponent = Math.Max(0, attemptNumber - 1);
+        double baseDelayMs = Math.Min(30000, 500 * Math.Pow(2, exponent));
         return TimeSpan.FromMilliseconds(baseDelayMs + Random.Shared.Next(0, 251));
     }
 }

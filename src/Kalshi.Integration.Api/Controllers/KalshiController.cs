@@ -10,21 +10,16 @@ namespace Kalshi.Integration.Api.Controllers;
 /// <summary>
 /// Exposes a Kalshi-compatible bridge so legacy clients can route all Kalshi traffic through the publisher.
 /// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="KalshiController"/> class.
+/// </remarks>
+/// <param name="kalshiBridgeService">The bridge service that proxies Kalshi operations.</param>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/kalshi")]
-public sealed class KalshiController : ControllerBase
+public sealed class KalshiController(KalshiBridgeService kalshiBridgeService) : ControllerBase
 {
-    private readonly KalshiBridgeService _kalshiBridgeService;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="KalshiController"/> class.
-    /// </summary>
-    /// <param name="kalshiBridgeService">The bridge service that proxies Kalshi operations.</param>
-    public KalshiController(KalshiBridgeService kalshiBridgeService)
-    {
-        _kalshiBridgeService = kalshiBridgeService;
-    }
+    private readonly KalshiBridgeService _kalshiBridgeService = kalshiBridgeService;
 
     /// <summary>
     /// Returns the raw Kalshi series payload.
@@ -33,7 +28,7 @@ public sealed class KalshiController : ControllerBase
     [HttpGet("series")]
     public async Task<IActionResult> GetSeries([FromQuery] string? category = null, [FromQuery] string[]? tags = null, CancellationToken cancellationToken = default)
     {
-        var payload = await _kalshiBridgeService.GetSeriesAsync(category, tags ?? Array.Empty<string>(), cancellationToken);
+        System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetSeriesAsync(category, tags ?? [], cancellationToken);
         return Ok(payload);
     }
 
@@ -49,7 +44,7 @@ public sealed class KalshiController : ControllerBase
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
     {
-        var payload = await _kalshiBridgeService.GetMarketsAsync(status, limit, seriesTicker, cursor, cancellationToken);
+        System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetMarketsAsync(status, limit, seriesTicker, cursor, cancellationToken);
         return Ok(payload);
     }
 
@@ -60,7 +55,7 @@ public sealed class KalshiController : ControllerBase
     [HttpGet("markets/{ticker}")]
     public async Task<IActionResult> GetMarket(string ticker, CancellationToken cancellationToken = default)
     {
-        var payload = await _kalshiBridgeService.GetMarketAsync(ticker, cancellationToken);
+        System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetMarketAsync(ticker, cancellationToken);
         return Ok(payload);
     }
 
@@ -71,7 +66,7 @@ public sealed class KalshiController : ControllerBase
     [HttpGet("portfolio/balance")]
     public async Task<IActionResult> GetBalance(CancellationToken cancellationToken = default)
     {
-        var payload = await _kalshiBridgeService.GetBalanceAsync(cancellationToken);
+        System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetBalanceAsync(cancellationToken);
         return Ok(payload);
     }
 
@@ -82,7 +77,7 @@ public sealed class KalshiController : ControllerBase
     [HttpGet("portfolio/positions")]
     public async Task<IActionResult> GetPositions(CancellationToken cancellationToken = default)
     {
-        var payload = await _kalshiBridgeService.GetPositionsAsync(cancellationToken);
+        System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetPositionsAsync(cancellationToken);
         return Ok(payload);
     }
 
@@ -95,7 +90,7 @@ public sealed class KalshiController : ControllerBase
     {
         try
         {
-            var payload = await _kalshiBridgeService.PlaceOrderAsync(request, cancellationToken);
+            System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.PlaceOrderAsync(request, cancellationToken);
             return Ok(payload);
         }
         catch (DomainException exception)
@@ -121,7 +116,7 @@ public sealed class KalshiController : ControllerBase
     {
         try
         {
-            var payload = await _kalshiBridgeService.GetOrderAsync(orderId, cancellationToken);
+            System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.GetOrderAsync(orderId, cancellationToken);
             return Ok(payload);
         }
         catch (KeyNotFoundException exception)
@@ -143,7 +138,7 @@ public sealed class KalshiController : ControllerBase
     {
         try
         {
-            var payload = await _kalshiBridgeService.CancelOrderAsync(orderId, cancellationToken);
+            System.Text.Json.Nodes.JsonNode payload = await _kalshiBridgeService.CancelOrderAsync(orderId, cancellationToken);
             return Ok(payload);
         }
         catch (KeyNotFoundException exception)

@@ -6,16 +6,12 @@ namespace Kalshi.Integration.Infrastructure.Persistence;
 /// <summary>
 /// Represents the Entity Framework Core database context used by the publisher's persistence layer.
 /// </summary>
-public sealed class KalshiIntegrationDbContext : DbContext
+/// <remarks>
+/// Initializes a new instance of the <see cref="KalshiIntegrationDbContext"/> class.
+/// </remarks>
+/// <param name="options">The database-context options supplied by Entity Framework Core.</param>
+public sealed class KalshiIntegrationDbContext(DbContextOptions<KalshiIntegrationDbContext> options) : DbContext(options)
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="KalshiIntegrationDbContext"/> class.
-    /// </summary>
-    /// <param name="options">The database-context options supplied by Entity Framework Core.</param>
-    public KalshiIntegrationDbContext(DbContextOptions<KalshiIntegrationDbContext> options) : base(options)
-    {
-    }
-
     public DbSet<TradeIntentEntity> TradeIntents => Set<TradeIntentEntity>();
     public DbSet<OrderEntity> Orders => Set<OrderEntity>();
     public DbSet<OrderEventEntity> OrderEvents => Set<OrderEventEntity>();

@@ -19,7 +19,7 @@ using OpenTelemetry.Trace;
 
 // Compose the API host in one place so local demo, test, and cloud deployment
 // paths all share the same auth, observability, persistence, and dashboard setup.
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 
@@ -27,7 +27,7 @@ builder.Services
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
 
-var configuredJwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+JwtOptions configuredJwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
 {
     configuredJwtOptions.SigningKey ??= JwtOptions.DevelopmentSigningKey;
@@ -50,8 +50,8 @@ builder.Services.AddOptions<JwtOptions>()
     .Validate(options => (options.SigningKey?.Length ?? 0) >= 32, "Authentication:Jwt:SigningKey must be at least 32 characters long.")
     .ValidateOnStart();
 
-var configuredOpenApiOptions = builder.Configuration.GetSection(OpenApiOptions.SectionName).Get<OpenApiOptions>() ?? new OpenApiOptions();
-var configuredOpenTelemetryOptions = builder.Configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>() ?? new OpenTelemetryOptions();
+OpenApiOptions configuredOpenApiOptions = builder.Configuration.GetSection(OpenApiOptions.SectionName).Get<OpenApiOptions>() ?? new OpenApiOptions();
+OpenTelemetryOptions configuredOpenTelemetryOptions = builder.Configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>() ?? new OpenTelemetryOptions();
 
 builder.Services.AddOptions<OpenApiOptions>()
     .Bind(builder.Configuration.GetSection(OpenApiOptions.SectionName))
@@ -62,8 +62,8 @@ builder.Services.AddOptions<OpenTelemetryOptions>()
     .Validate(options => string.IsNullOrWhiteSpace(options.OtlpEndpoint) || Uri.TryCreate(options.OtlpEndpoint, UriKind.Absolute, out _), $"{OpenTelemetryOptions.SectionName}:OtlpEndpoint must be an absolute URI when configured.")
     .ValidateOnStart();
 
-var swaggerEnabled = builder.Environment.IsDevelopment() || configuredOpenApiOptions.EnableSwaggerInNonDevelopment;
-var jwtSigningKeyBytes = Encoding.UTF8.GetBytes(configuredJwtOptions.SigningKey ?? string.Empty);
+bool swaggerEnabled = builder.Environment.IsDevelopment() || configuredOpenApiOptions.EnableSwaggerInNonDevelopment;
+byte[] jwtSigningKeyBytes = Encoding.UTF8.GetBytes(configuredJwtOptions.SigningKey ?? string.Empty);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -82,20 +82,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("trading.write", policy =>
-        policy.RequireAuthenticatedUser().RequireRole("admin", "trader"));
-
-    options.AddPolicy("trading.read", policy =>
-        policy.RequireAuthenticatedUser().RequireRole("admin", "trader", "operator"));
-
-    options.AddPolicy("operations.read", policy =>
-        policy.RequireAuthenticatedUser().RequireRole("admin", "operator"));
-
-    options.AddPolicy("integration.write", policy =>
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("trading.write", policy =>
+        policy.RequireAuthenticatedUser().RequireRole("admin", "trader"))
+    .AddPolicy("trading.read", policy =>
+        policy.RequireAuthenticatedUser().RequireRole("admin", "trader", "operator"))
+    .AddPolicy("operations.read", policy =>
+        policy.RequireAuthenticatedUser().RequireRole("admin", "operator"))
+    .AddPolicy("integration.write", policy =>
         policy.RequireAuthenticatedUser().RequireRole("admin", "integration"));
-});
 
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource
@@ -116,7 +111,7 @@ builder.Services.AddOpenTelemetry()
                 options.Filter = httpContext => !httpContext.Request.Path.StartsWithSegments("/health/live");
                 options.EnrichWithHttpRequest = (activity, request) =>
                 {
-                    if (request.Headers.TryGetValue(RequestMetadata.CorrelationIdHeaderName, out var correlationId))
+                    if (request.Headers.TryGetValue(RequestMetadata.CorrelationIdHeaderName, out Microsoft.Extensions.Primitives.StringValues correlationId))
                     {
                         activity.SetTag("kalshi.correlation_id", correlationId.ToString());
                     }
@@ -131,7 +126,7 @@ builder.Services.AddOpenTelemetry()
                 options.RecordException = true;
                 options.EnrichWithHttpRequestMessage = (activity, request) =>
                 {
-                    if (request.Headers.TryGetValues(RequestMetadata.CorrelationIdHeaderName, out var correlationValues))
+                    if (request.Headers.TryGetValues(RequestMetadata.CorrelationIdHeaderName, out IEnumerable<string>? correlationValues))
                     {
                         activity.SetTag("kalshi.correlation_id", correlationValues.FirstOrDefault());
                     }
@@ -192,7 +187,7 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
     });
 
-    var securityScheme = new OpenApiSecurityScheme
+    OpenApiSecurityScheme securityScheme = new()
     {
         Name = "Authorization",
         Type = SecuritySchemeType.Http,
@@ -213,15 +208,15 @@ builder.Services.AddSwaggerGen(options =>
         [securityScheme] = Array.Empty<string>(),
     });
 
-    var xmlDocumentationFiles = new[]
-    {
+    string[] xmlDocumentationFiles =
+    [
         Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml"),
         Path.Combine(AppContext.BaseDirectory, $"{typeof(Kalshi.Integration.Application.DependencyInjection).Assembly.GetName().Name}.xml"),
         Path.Combine(AppContext.BaseDirectory, $"{typeof(KalshiTelemetry).Assembly.GetName().Name}.xml"),
         Path.Combine(AppContext.BaseDirectory, $"{typeof(Kalshi.Integration.Infrastructure.DependencyInjection).Assembly.GetName().Name}.xml"),
-    };
+    ];
 
-    foreach (var xmlDocumentationFile in xmlDocumentationFiles.Distinct(StringComparer.OrdinalIgnoreCase))
+    foreach (string? xmlDocumentationFile in xmlDocumentationFiles.Distinct(StringComparer.OrdinalIgnoreCase))
     {
         if (File.Exists(xmlDocumentationFile))
         {
@@ -230,14 +225,14 @@ builder.Services.AddSwaggerGen(options =>
     }
 });
 
-var app = builder.Build();
-var databaseOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value;
-var applyMigrationsOnStartup = databaseOptions.ApplyMigrationsOnStartup && !app.Environment.IsEnvironment("Testing");
+WebApplication app = builder.Build();
+DatabaseOptions databaseOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value;
+bool applyMigrationsOnStartup = databaseOptions.ApplyMigrationsOnStartup && !app.Environment.IsEnvironment("Testing");
 
 if (applyMigrationsOnStartup)
 {
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+    using IServiceScope scope = app.Services.CreateScope();
+    KalshiIntegrationDbContext dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
     await dbContext.Database.MigrateAsync();
 }
 

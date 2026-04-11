@@ -58,7 +58,7 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             }
         }
 
-        var host = base.CreateHost(builder);
+        IHost host = base.CreateHost(builder);
 
         lock (_databaseInitializationLock)
         {
@@ -67,8 +67,8 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
                 return host;
             }
 
-            using var scope = host.Services.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
+            using IServiceScope scope = host.Services.CreateScope();
+            KalshiIntegrationDbContext dbContext = scope.ServiceProvider.GetRequiredService<KalshiIntegrationDbContext>();
             dbContext.Database.EnsureDeleted();
             dbContext.Database.EnsureCreated();
             _databaseInitialized = true;
@@ -79,20 +79,20 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
 
     public HttpClient CreateAuthenticatedClient(params string[] roles)
     {
-        var client = CreateClient();
+        HttpClient client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", CreateJwtToken(roles));
         return client;
     }
 
     public static string CreateJwtToken(params string[] roles)
     {
-        var normalizedRoles = roles is { Length: > 0 }
+        string[] normalizedRoles = roles is { Length: > 0 }
             ? roles.Select(role => role.Trim()).Where(role => !string.IsNullOrWhiteSpace(role)).Distinct(StringComparer.Ordinal).ToArray()
             : ["admin"];
 
-        var now = DateTimeOffset.UtcNow;
-        var handler = new JwtSecurityTokenHandler();
-        var token = handler.CreateToken(new SecurityTokenDescriptor
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        JwtSecurityTokenHandler handler = new();
+        SecurityToken token = handler.CreateToken(new SecurityTokenDescriptor
         {
             Issuer = JwtIssuer,
             Audience = JwtAudience,
@@ -133,7 +133,7 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
 
     private void EnsureDatabaseDirectory()
     {
-        var directory = Path.GetDirectoryName(_databasePath);
+        string? directory = Path.GetDirectoryName(_databasePath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
@@ -144,7 +144,7 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
     {
         try
         {
-            var directory = Path.GetDirectoryName(_databasePath);
+            string? directory = Path.GetDirectoryName(_databasePath);
             if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory) && File.Exists(_databasePath))
             {
                 File.Delete(_databasePath);
