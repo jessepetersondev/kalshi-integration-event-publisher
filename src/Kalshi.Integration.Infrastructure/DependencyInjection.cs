@@ -33,7 +33,8 @@ public static class DependencyInjection
         string? connectionString = configuration.GetConnectionString("KalshiIntegration")
             ?? (normalizedProvider == DatabaseProviders.Sqlite ? "Data Source=kalshi-integration-event-publisher.db" : null);
         string normalizedEventPublisherProvider = EventPublisherProviders.Normalize(configuration.GetValue<string>($"{EventPublisherOptions.SectionName}:Provider"));
-        bool enableRabbitMqResultConsumer = configuration.GetValue($"{RabbitMqOptions.SectionName}:EnableResultConsumer", true);
+        RabbitMqOptions configuredRabbitMqOptions = configuration.GetSection(RabbitMqOptions.SectionName).Get<RabbitMqOptions>() ?? new RabbitMqOptions();
+        bool enableRabbitMqResultConsumer = configuredRabbitMqOptions.EnableResultConsumer;
         KalshiApiOptions kalshiApiOptions = configuration.GetSection(KalshiApiOptions.SectionName).Get<KalshiApiOptions>() ?? new KalshiApiOptions();
         NodeGatewayOptions nodeGatewayOptions = configuration.GetSection(NodeGatewayOptions.SectionName).Get<NodeGatewayOptions>() ?? new NodeGatewayOptions();
 
@@ -138,7 +139,11 @@ public static class DependencyInjection
         services.AddScoped<PublisherCommandOutboxDispatcher>();
         services.AddHostedService<PublisherCommandOutboxBackgroundService>();
         services.AddHostedService<PublisherResultRepairBackgroundService>();
-        services.AddHostedService<PublisherReliabilityMonitorBackgroundService>();
+        if (configuredRabbitMqOptions.EnableReliabilityMonitoring)
+        {
+            services.AddHostedService<PublisherReliabilityMonitorBackgroundService>();
+        }
+
         if (enableRabbitMqResultConsumer)
         {
             services.AddHostedService<RabbitMqResultEventConsumer>();
@@ -149,7 +154,8 @@ public static class DependencyInjection
             .AddCheck<DatabaseReadinessHealthCheck>("database", tags: ["ready"])
             .AddCheck<PublisherOutboxHealthCheck>("publisher-outbox", tags: ["ready"]);
 
-        if (string.Equals(normalizedEventPublisherProvider, EventPublisherProviders.RabbitMq, StringComparison.OrdinalIgnoreCase) || enableRabbitMqResultConsumer)
+        if (configuredRabbitMqOptions.EnableQueueHealthChecks
+            && (string.Equals(normalizedEventPublisherProvider, EventPublisherProviders.RabbitMq, StringComparison.OrdinalIgnoreCase) || enableRabbitMqResultConsumer))
         {
             healthChecks.AddCheck<RabbitMqQueuesHealthCheck>("rabbitmq-queues", tags: ["ready"]);
         }

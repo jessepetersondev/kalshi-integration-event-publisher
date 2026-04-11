@@ -71,6 +71,10 @@ public sealed class RabbitMqOptions
     [Range(100, 60000)]
     public int QueueMonitoringIntervalMilliseconds { get; set; } = 5000;
 
+    public bool EnableReliabilityMonitoring { get; set; } = true;
+
+    public bool EnableQueueHealthChecks { get; set; } = true;
+
     [Range(5, 600)]
     public int OutboxLeaseDurationSeconds { get; set; } = 30;
 

@@ -227,7 +227,7 @@ builder.Services.AddSwaggerGen(options =>
 
 WebApplication app = builder.Build();
 DatabaseOptions databaseOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value;
-bool applyMigrationsOnStartup = databaseOptions.ApplyMigrationsOnStartup && !app.Environment.IsEnvironment("Testing");
+bool applyMigrationsOnStartup = databaseOptions.ApplyMigrationsOnStartup;
 
 if (applyMigrationsOnStartup)
 {
