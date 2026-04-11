@@ -1,90 +1,82 @@
-# Event Publishing Extension Path
+# Event Publishing And Reliability
 
-The sandbox now has a **clean application-boundary publishing abstraction** for outbound application events:
+The sandbox now runs a two-service RabbitMQ pipeline inside this repository:
 
-- `IApplicationEventPublisher` lives in `Kalshi.Integration.Application`
-- `ApplicationEventEnvelope` defines the transport-agnostic event contract
-- `InMemoryApplicationEventPublisher` supports the default in-process MVP path
-- `RabbitMqApplicationEventPublisher` provides a broker-backed adapter behind the same application interface
+- the publisher/API persists orders and outbound command messages in the same transaction
+- the executor consumes order commands, performs replay-safe Kalshi execution, and persists follow-up events through its own outbox
+- the publisher consumes executor result events and repairs any unapplied result projection gaps automatically
 
-## Current behavior
+## Publisher command outbox
 
-The implementation now supports two publish modes selected via configuration:
+Publisher order creation no longer does "persist order, publish immediately, fall back to manual review on failure".
 
-- `EventPublishing:Provider=InMemory`
-  - successful API workflows publish application events in-process
-  - the in-memory publisher keeps a local event history for inspection
-  - tests can subscribe to events directly without a broker
-- `EventPublishing:Provider=RabbitMq`
-  - successful API workflows publish serialized `ApplicationEventEnvelope` messages to RabbitMQ
-  - the adapter declares the configured exchange before publishing
-  - correlation/idempotency/resource metadata is mapped into RabbitMQ headers and message properties
+Current behavior:
 
-This keeps the application boundary clean while still demonstrating a real broker adapter.
+- `OrderSubmissionService` persists the order row and the outbound `order.created` command in one durable transaction
+- `PublisherCommandOutboxDispatcher` performs best-effort immediate dispatch for low latency
+- `PublisherCommandOutboxBackgroundService` drains pending and leased messages after restarts or broker failures
+- publish success requires both broker confirm success and successful routing
+- confirm timeout, nack, channel close, connection interruption, and unroutable mandatory returns are recorded as failed attempts
+- transient failures move orders into `RetryScheduled`, not manual review
+- manual intervention is reserved for retry exhaustion or permanent broker/configuration failures
 
-## Publisher responsibilities
+Publisher outbox persistence lives in:
 
-The publisher abstraction is responsible for:
+- `PublisherOutboxMessages`
+- `PublisherOutboxAttempts`
 
-- accepting a transport-agnostic application event envelope
-- dispatching that event through the configured implementation
-- avoiding any dependency on a concrete broker in application/domain code
+## Executor outbox
 
-The publisher abstraction is **not** responsible for:
+The executor no longer fire-and-forgets result, inbound, or DLQ publishes.
 
-- business validation
-- workflow orchestration
-- domain state transitions
-- broker-specific retry policy semantics
-- queue / topic provisioning
+Current behavior:
 
-Those concerns stay in the appropriate layer.
+- inbound command handling stores execution state and any follow-up event in the same database transaction
+- `RabbitMqResultEventPublisher`, `RabbitMqInboundEventPublisher`, and `DeadLetterEventPublisher` queue durable outbox rows
+- `ExecutorOutboxBackgroundService` republishes pending messages until they are confirmed and routed
+- duplicate outbox message ids are ignored safely during replay
 
-## Current event shape
+Executor outbox persistence lives in:
 
-`ApplicationEventEnvelope` carries:
+- `ExecutorOutboxMessages`
+- `ExecutorOutboxAttempts`
 
-- event id
-- category
-- event name
-- resource id
-- correlation id
-- idempotency key
-- string-based attributes
-- occurred-at timestamp
+## Replay-safe execution
 
-The envelope stays generic so concrete broker adapters can serialize it without pushing broker concepts into the application layer.
+`OrderCreatedHandler` now performs a pre-flight duplicate guard before any `PlaceOrderAsync` call:
 
-## RabbitMQ adapter details
+- it acquires or resumes a durable `ExecutionRecord`
+- it checks prior execution state by publisher order id, client order id, and external mapping
+- it uses a lease to prevent concurrent duplicate placements
+- it recovers an existing Kalshi order before creating a new one
+- replaying the same inbound command does not place a second live order
 
-`RabbitMqApplicationEventPublisher` currently:
+The executor persists its duplicate-guard and recovery state in:
 
-- uses `RabbitMqOptions` from configuration
-- publishes to a durable topic exchange
-- builds routing keys from `{RoutingKeyPrefix}.{Category}.{EventName}`
-- normalizes event names such as `order.created` and `execution-update.applied`
-- writes message headers for:
-  - `event-id`
-  - `category`
-  - `event-name`
-  - `occurred-at`
-  - `resource-id` when present
-  - `correlation-id` when present
-  - `idempotency-key` when present
-  - `attribute:*` for envelope attributes
+- `ExecutionRecords`
+- `ExternalOrderMappings`
+- `ExecutorInboundMessages`
 
-Default configuration lives in `src/Kalshi.Integration.Api/appsettings.json`.
+## Routing safety
 
-## Relationship to the executor repository
+All critical RabbitMQ publishes now use:
 
-This repository is responsible for publishing application events.
-The downstream execution/consumption flow now lives in the separate `kalshi-integration-executor` repository.
-That split keeps this repo focused on API-side intake, persistence, and publishing while the executor repo owns broker consumption, DLQ handling, replay, and Kalshi-side execution behavior.
+- `mandatory: true`
+- publisher confirms
+- durable queues and DLQs declared by `RabbitMqTopologyBootstrapper`
 
-## Future path
+An event is treated as published only after:
 
-If this sandbox later needs Azure-specific messaging signal, keep the application contract unchanged and add another infrastructure implementation such as:
+- RabbitMQ confirms the publish
+- the publish is not returned as unroutable
 
-- `AzureServiceBusApplicationEventPublisher`
+## Repair loops
 
-That adapter should follow the same pattern: map `ApplicationEventEnvelope` into broker-native messages without leaking broker concepts into the application layer.
+The pipeline includes automated repair workers:
+
+- `PublisherCommandOutboxBackgroundService` for stuck publisher commands
+- `ExecutorOutboxBackgroundService` for stuck executor follow-up events
+- `PublisherResultRepairBackgroundService` for persisted-but-unapplied result events
+- `ExecutionRepairBackgroundService` for executions that completed the external side effect but still need a terminal result queued/emitted
+
+These workers are replay-safe and rely on deterministic ids plus durable state to close gaps without duplicating business side effects.

@@ -2,6 +2,7 @@ using System.Globalization;
 using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.TradeIntents;
+using Kalshi.Integration.Domain.Orders;
 
 namespace Kalshi.Integration.Application.Trading;
 
@@ -28,7 +29,8 @@ public static class WeatherQuantCommandMapper
             response.TargetClientOrderId,
             response.TargetExternalOrderId,
             response.Id,
-            publisherOrderId: null);
+            publisherOrderId: null,
+            clientOrderId: null);
     }
 
     public static IReadOnlyDictionary<string, string?> MapOrderAttributes(OrderResponse response)
@@ -49,7 +51,43 @@ public static class WeatherQuantCommandMapper
             response.TargetClientOrderId,
             response.TargetExternalOrderId,
             response.TradeIntentId,
-            response.Id);
+            response.Id,
+            response.ClientOrderId ?? response.CorrelationId);
+    }
+
+    public static IReadOnlyDictionary<string, string?> MapOrderAttributes(
+        Order order,
+        string clientOrderId,
+        IReadOnlyDictionary<string, string?>? additionalAttributes = null)
+    {
+        var attributes = BuildCommonAttributes(
+            order.TradeIntent.ActionType.ToString().ToLowerInvariant(),
+            order.TradeIntent.Ticker,
+            order.TradeIntent.Side?.ToString().ToLowerInvariant(),
+            order.TradeIntent.Quantity,
+            order.TradeIntent.LimitPrice,
+            order.TradeIntent.StrategyName,
+            order.TradeIntent.OriginService,
+            order.TradeIntent.DecisionReason,
+            order.TradeIntent.CommandSchemaVersion,
+            order.TradeIntent.TargetPositionTicker,
+            order.TradeIntent.TargetPositionSide?.ToString().ToLowerInvariant(),
+            order.TradeIntent.TargetPublisherOrderId,
+            order.TradeIntent.TargetClientOrderId,
+            order.TradeIntent.TargetExternalOrderId,
+            order.TradeIntent.Id,
+            order.Id,
+            clientOrderId);
+
+        if (additionalAttributes is not null)
+        {
+            foreach (var attribute in additionalAttributes)
+            {
+                attributes[attribute.Key] = attribute.Value;
+            }
+        }
+
+        return attributes;
     }
 
     private static Dictionary<string, string?> BuildCommonAttributes(
@@ -68,7 +106,8 @@ public static class WeatherQuantCommandMapper
         string? targetClientOrderId,
         string? targetExternalOrderId,
         Guid tradeIntentId,
-        Guid? publisherOrderId)
+        Guid? publisherOrderId,
+        string? clientOrderId)
     {
         return new Dictionary<string, string?>
         {
@@ -81,6 +120,7 @@ public static class WeatherQuantCommandMapper
             ["side"] = side,
             ["quantity"] = quantity?.ToString(CultureInfo.InvariantCulture),
             ["limitPrice"] = limitPrice?.ToString(CultureInfo.InvariantCulture),
+            ["clientOrderId"] = clientOrderId,
             ["strategyName"] = strategyName,
             ["decisionReason"] = decisionReason,
             ["targetPositionTicker"] = targetPositionTicker,
@@ -108,4 +148,33 @@ public static class WeatherQuantCommandMapper
             correlationId: correlationId,
             idempotencyKey: idempotencyKey,
             attributes: MapOrderAttributes(response));
+
+    public static ApplicationEventEnvelope CreateOrderEvent(
+        Order order,
+        string correlationId,
+        string? idempotencyKey,
+        string clientOrderId,
+        IReadOnlyDictionary<string, string?>? additionalAttributes = null)
+        => ApplicationEventEnvelope.Create(
+            category: "trading",
+            name: "order.created",
+            resourceId: order.Id.ToString(),
+            correlationId: correlationId,
+            idempotencyKey: idempotencyKey,
+            attributes: MapOrderAttributes(order, clientOrderId, additionalAttributes));
+
+    public static string ResolveClientOrderId(Order order)
+    {
+        if (!string.IsNullOrWhiteSpace(order.ClientOrderId))
+        {
+            return order.ClientOrderId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.TradeIntent.CorrelationId))
+        {
+            return order.TradeIntent.CorrelationId.Trim();
+        }
+
+        return order.Id.ToString("N");
+    }
 }

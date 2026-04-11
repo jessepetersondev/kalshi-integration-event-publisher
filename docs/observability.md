@@ -1,127 +1,88 @@
 # Observability
 
-The Kalshi Integration Event Publisher now includes an **OpenTelemetry-based observability baseline** for traces and metrics.
+The publisher API and executor service emit OpenTelemetry traces and metrics, structured logs, readiness health, and operational-issue records for the critical reliability paths.
 
-## What is instrumented
+## Traces
 
-### Traces
+Both .NET services emit traces for:
 
-The API emits distributed traces for:
 - inbound ASP.NET Core requests
 - outbound `HttpClient` calls
-- EF Core database activity
+- EF Core database operations
 
-This gives the repo coverage over the most important request path components:
-- incoming client/API traffic
-- important dependency calls
-- persistence operations
+The API and executor both add `KalshiTelemetry.ActivitySourceName`, so outbox publication, duplicate-guard recovery, and result projection paths can be correlated with request and dependency spans.
 
-### Metrics
+## Metrics
 
-The API emits metrics for:
-- ASP.NET Core request activity
-- outbound `HttpClient` activity
-- runtime metrics
-- process metrics
-- custom request/dependency duration histograms
+Custom reliability metrics now include:
 
-Custom application metrics currently include:
-- `kalshi.http.server.request.duration`
-- `kalshi.dependency.call.duration`
+- `kalshi.reliability.retry_exhausted.total`
+- `kalshi.reliability.duplicate_guard_hits.total`
+- `kalshi.rabbitmq.publish_failures.total`
+- `kalshi.rabbitmq.reconnect_failures.total`
+- `kalshi.outbox.pending.count`
+- `kalshi.outbox.oldest_pending_age.ms`
+- `kalshi.rabbitmq.queue.backlog.count`
+- `kalshi.rabbitmq.queue.backlog_age.ms`
+- `kalshi.rabbitmq.queue.consumer_count`
+- `kalshi.rabbitmq.dead_letter_queue.size`
+- `kalshi.rabbitmq.dead_letter_queue.growth.total`
 
-## Service identity
+These sit alongside the existing request, dependency, runtime, and process instrumentation.
 
-Telemetry is emitted under the configured OpenTelemetry service identity:
+## Health checks
 
-```json
-"OpenTelemetry": {
-  "ServiceName": "Kalshi.Integration.Api",
-  "ServiceVersion": "v1"
-}
-```
+Publisher API:
 
-The deployment environment is also attached as resource metadata.
+- `self`
+- `database`
+- `publisher-outbox`
+- `rabbitmq-queues` when RabbitMQ publishing or result consumption is enabled
+- `node-gateway` when configured for readiness
 
-## Configuration
+Executor:
 
-OpenTelemetry settings live under:
-- `OpenTelemetry`
+- `self`
+- `database`
+- `executor-outbox`
+- `rabbitmq-queues`
 
-Current configuration fields:
-- `ServiceName`
-- `ServiceVersion`
-- `OtlpEndpoint`
-- `AzureMonitorConnectionString`
-- `EnableConsoleExporter`
+Readiness checks degrade or fail automatically for:
+
+- outbox backlog age beyond configured thresholds
+- retry exhaustion/manual intervention requirements
+- RabbitMQ inspection failures
+- DLQ growth or non-empty DLQs
+- critical queues with `consumer_count == 0`
+- critical queue backlog age beyond configured thresholds
+
+## Logs and operational issues
+
+Both services record actionable reliability problems into durable operational issue tables:
+
+- publisher: `OperationalIssues`
+- executor: `ExecutorOperationalIssues`
+
+Typical issue categories include:
+
+- publish retry exhaustion
+- RabbitMQ reconnect failure
+- queue inspection failure
+- repair-loop failure
+
+## Export configuration
+
+The API and executor both support OTLP export through:
+
+- `OpenTelemetry__OtlpEndpoint`
 
 Example:
 
-```json
-"OpenTelemetry": {
-  "ServiceName": "Kalshi.Integration.Api",
-  "ServiceVersion": "v1",
-  "OtlpEndpoint": "http://otel-collector:4317",
-  "AzureMonitorConnectionString": null,
-  "EnableConsoleExporter": false
-}
-```
-
-## OTLP export path
-
-If `OpenTelemetry:OtlpEndpoint` is configured, the app exports both traces and metrics to that OTLP endpoint.
-
-Typical examples:
-
 ```bash
 export OpenTelemetry__OtlpEndpoint='http://localhost:4317'
 ```
 
-or in cloud configuration:
+Health endpoints:
 
-```json
-"OpenTelemetry": {
-  "OtlpEndpoint": "http://otel-collector:4317"
-}
-```
-
-This makes the repo compatible with:
-- local OpenTelemetry Collector setups
-- Grafana Tempo / Prometheus-style pipelines via collector routing
-- vendor-neutral OTLP backends
-- Azure Monitor / Application Insights via collector-based forwarding
-
-## Azure Monitor / App Insights compatibility
-
-The implementation is standards-based OpenTelemetry, which means it is compatible with Azure Monitor / Application Insights deployment paths.
-
-Recommended Azure-oriented options:
-- send OTLP to an OpenTelemetry Collector that forwards to Azure Monitor
-- or add the Azure Monitor OpenTelemetry exporter directly in a future deployment-specific step
-
-For this repo, the important part is that the instrumentation is **OpenTelemetry-native and export-path configurable** rather than being tied to a single vendor.
-
-## Local validation idea
-
-Run the API with an OTLP endpoint and inspect emitted traces/metrics through a collector-backed local stack.
-
-Example environment variable:
-
-```bash
-export OpenTelemetry__OtlpEndpoint='http://localhost:4317'
-```
-
-Then start the app and exercise:
-- `POST /api/v1/trade-intents`
-- `POST /api/v1/orders`
-- `GET /api/v1/orders/{id}`
-- `GET /health/ready`
-
-Those requests should produce inbound request telemetry, and dependency/database work should show up beneath the request path when the backend path exercises EF Core or outbound HTTP.
-
-## Why this matters
-
-This baseline makes the repo easier to discuss in production terms:
-- request traces are correlation-friendly
-- dependency behavior is visible
-- metrics are ready for dashboards/alerts
-- export stays portable across vendor choices
+- API: `/health/live`, `/health/ready`
+- Executor: `/health/live`, `/health/ready`

@@ -21,6 +21,8 @@ public sealed class KalshiIntegrationDbContext : DbContext
     public DbSet<OrderEventEntity> OrderEvents => Set<OrderEventEntity>();
     public DbSet<OrderLifecycleEventEntity> OrderLifecycleEvents => Set<OrderLifecycleEventEntity>();
     public DbSet<ResultEventEntity> ResultEvents => Set<ResultEventEntity>();
+    public DbSet<PublisherOutboxMessageEntity> PublisherOutboxMessages => Set<PublisherOutboxMessageEntity>();
+    public DbSet<PublisherOutboxAttemptEntity> PublisherOutboxAttempts => Set<PublisherOutboxAttemptEntity>();
     public DbSet<AuditRecordEntity> AuditRecords => Set<AuditRecordEntity>();
     public DbSet<IdempotencyRecordEntity> IdempotencyRecords => Set<IdempotencyRecordEntity>();
     public DbSet<OperationalIssueEntity> OperationalIssues => Set<OperationalIssueEntity>();
@@ -51,7 +53,7 @@ public sealed class KalshiIntegrationDbContext : DbContext
         {
             entity.ToTable("Orders");
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => x.TradeIntentId);
+            entity.HasIndex(x => x.TradeIntentId).IsUnique();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.PublishStatus).HasMaxLength(32).IsRequired();
             entity.Property(x => x.LastResultStatus).HasMaxLength(64);
@@ -59,6 +61,7 @@ public sealed class KalshiIntegrationDbContext : DbContext
             entity.Property(x => x.ExternalOrderId).HasMaxLength(128);
             entity.Property(x => x.ClientOrderId).HasMaxLength(128);
             entity.HasIndex(x => x.ExternalOrderId);
+            entity.HasIndex(x => x.ClientOrderId).IsUnique();
         });
 
         modelBuilder.Entity<OrderEventEntity>(entity =>
@@ -83,10 +86,36 @@ public sealed class KalshiIntegrationDbContext : DbContext
             entity.ToTable("ResultEvents");
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.OrderId);
+            entity.HasIndex(x => x.AppliedAt);
             entity.Property(x => x.Name).HasMaxLength(128).IsRequired();
             entity.Property(x => x.CorrelationId).HasMaxLength(128);
             entity.Property(x => x.IdempotencyKey).HasMaxLength(128);
             entity.Property(x => x.PayloadJson).HasColumnType("TEXT").IsRequired();
+            entity.Property(x => x.LastError).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<PublisherOutboxMessageEntity>(entity =>
+        {
+            entity.ToTable("PublisherOutboxMessages");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Status, x.NextAttemptAt });
+            entity.HasIndex(x => new { x.AggregateType, x.AggregateId });
+            entity.Property(x => x.AggregateType).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PayloadJson).HasColumnType("TEXT").IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.ProcessorId).HasMaxLength(128);
+            entity.Property(x => x.LastError).HasMaxLength(1024);
+            entity.Property(x => x.LastFailureKind).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<PublisherOutboxAttemptEntity>(entity =>
+        {
+            entity.ToTable("PublisherOutboxAttempts");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.MessageId, x.AttemptNumber }).IsUnique();
+            entity.Property(x => x.Outcome).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.FailureKind).HasMaxLength(128);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(1024);
         });
 
         modelBuilder.Entity<AuditRecordEntity>(entity =>

@@ -125,7 +125,7 @@ public sealed class TradingQueryServiceTests
         failedOrder.SetPersistenceState(
             failedOrder.Id,
             OrderStatus.Rejected,
-            OrderPublishStatus.PublishPendingReview,
+            OrderPublishStatus.ManualInterventionRequired,
             lastResultStatus: "order.execution_failed",
             lastResultMessage: "exchange rejected order",
             externalOrderId: "ext-fail-1",
@@ -200,7 +200,7 @@ public sealed class TradingQueryServiceTests
         matchingOrder.SetPersistenceState(
             matchingOrder.Id,
             OrderStatus.Rejected,
-            OrderPublishStatus.PublishPendingReview,
+            OrderPublishStatus.ManualInterventionRequired,
             lastResultStatus: "order.execution_blocked",
             lastResultMessage: "risk block",
             externalOrderId: "ext-match-1",
@@ -241,7 +241,7 @@ public sealed class TradingQueryServiceTests
             correlationId: "CORR-MATCH",
             originService: "WEATHER-QUANT",
             status: "rejected",
-            publishStatus: "publish_pending_review",
+            publishStatus: "manual_intervention_required",
             outcomeState: "FAILED",
             resultStatus: "order.execution_blocked",
             limit: 10);

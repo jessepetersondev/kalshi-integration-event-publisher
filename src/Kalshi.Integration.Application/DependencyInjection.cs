@@ -28,6 +28,7 @@ public static class DependencyInjection
 
         services.AddScoped<RiskEvaluator>();
         services.AddScoped<IdempotencyService>();
+        services.AddScoped<OrderSubmissionService>();
         services.AddScoped<TradingService>();
         services.AddScoped<TradingQueryService>();
         services.AddScoped<DashboardService>();

@@ -113,6 +113,28 @@ public sealed class KalshiApiClient : IKalshiApiClient
             cancellationToken);
 
     /// <inheritdoc />
+    public Task<JsonNode> GetOrdersAsync(string? ticker, int subaccount, CancellationToken cancellationToken = default)
+    {
+        var query = new List<KeyValuePair<string, string?>>
+        {
+            CreateQueryPair("subaccount", subaccount.ToString(CultureInfo.InvariantCulture)),
+        };
+
+        if (!string.IsNullOrWhiteSpace(ticker))
+        {
+            query.Add(CreateQueryPair("ticker", ticker.Trim()));
+        }
+
+        return RequestAsync(
+            HttpMethod.Get,
+            "/portfolio/orders",
+            requireAuthentication: true,
+            query,
+            payload: null,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
     public Task<JsonNode> CancelOrderAsync(string externalOrderId, int subaccount, CancellationToken cancellationToken = default)
         => RequestAsync(
             HttpMethod.Delete,

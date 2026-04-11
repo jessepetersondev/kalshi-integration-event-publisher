@@ -434,7 +434,8 @@ tr:hover td {
 .badge-status-rejected,
 .badge-status-cancelled,
 .badge-status-canceled,
-.badge-publish-publishpendingreview {
+.badge-outcome-manualinterventionrequired,
+.badge-publish-manualinterventionrequired {
   color: var(--danger);
   background: var(--danger-soft);
 }
@@ -445,9 +446,10 @@ tr:hover td {
 .badge-severity-warning,
 .badge-outcome-replayed,
 .badge-outcome-awaitingresult,
+.badge-outcome-awaitingpublishretry,
 .badge-outcome-awaitingpublishconfirmation,
 .badge-outcome-pendingsubmission,
-.badge-outcome-pendingreview,
+.badge-publish-retryscheduled,
 .badge-publish-ordercreated,
 .badge-publish-publishattempted {
   color: var(--warning);

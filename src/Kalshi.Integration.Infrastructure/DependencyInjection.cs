@@ -1,4 +1,5 @@
 using Kalshi.Integration.Application.Abstractions;
+using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Infrastructure.Integrations.Kalshi;
 using Kalshi.Integration.Infrastructure.Integrations.NodeGateway;
 using Kalshi.Integration.Infrastructure.Messaging;
@@ -59,6 +60,7 @@ public static class DependencyInjection
         services.AddOptions<RabbitMqOptions>()
             .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
             .ValidateDataAnnotations()
+            .PostConfigure(options => options.Mandatory = true)
             .ValidateOnStart();
 
         services.AddOptions<KalshiApiOptions>()
@@ -111,14 +113,32 @@ public static class DependencyInjection
         services.AddScoped<ITradeIntentRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
         services.AddScoped<IOrderRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
         services.AddScoped<IPositionSnapshotRepository>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
+        services.AddScoped<IOrderCommandSubmissionStore>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
+        services.AddScoped<IPublisherCommandOutboxStore>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
+        services.AddScoped<IExecutorResultProjectionStore>(serviceProvider => serviceProvider.GetRequiredService<EfTradingRepository>());
         services.AddScoped<IOperationalIssueStore, EfOperationalIssueStore>();
         services.AddScoped<IAuditRecordStore, EfAuditRecordStore>();
         services.AddScoped<IIdempotencyStore, EfIdempotencyStore>();
-        services.AddScoped<KalshiBridgeService>();
+        services.AddScoped<KalshiBridgeService>(serviceProvider =>
+            new KalshiBridgeService(
+                serviceProvider.GetRequiredService<IKalshiApiClient>(),
+                serviceProvider.GetRequiredService<IOrderRepository>(),
+                serviceProvider.GetRequiredService<ITradeIntentRepository>(),
+                serviceProvider.GetRequiredService<OrderSubmissionService>(),
+                serviceProvider.GetRequiredService<PublisherCommandOutboxDispatcher>(),
+                serviceProvider.GetRequiredService<TradingService>(),
+                serviceProvider.GetRequiredService<TradingQueryService>(),
+                serviceProvider.GetRequiredService<IOptions<KalshiApiOptions>>()));
         services.AddSingleton<InMemoryApplicationEventPublisher>();
         services.AddSingleton<IConnectionFactory>(sp => CreateRabbitMqConnectionFactory(sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value));
+        services.AddSingleton<RabbitMqTopologyBootstrapper>();
+        services.AddSingleton<RabbitMqQueueInspector>();
         services.AddSingleton<RabbitMqApplicationEventPublisher>();
         services.AddSingleton<IApplicationEventPublisher>(ResolveApplicationEventPublisher);
+        services.AddScoped<PublisherCommandOutboxDispatcher>();
+        services.AddHostedService<PublisherCommandOutboxBackgroundService>();
+        services.AddHostedService<PublisherResultRepairBackgroundService>();
+        services.AddHostedService<PublisherReliabilityMonitorBackgroundService>();
         if (enableRabbitMqResultConsumer)
         {
             services.AddHostedService<RabbitMqResultEventConsumer>();
@@ -126,7 +146,13 @@ public static class DependencyInjection
 
         var healthChecks = services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live", "ready"])
-            .AddCheck<DatabaseReadinessHealthCheck>("database", tags: ["ready"]);
+            .AddCheck<DatabaseReadinessHealthCheck>("database", tags: ["ready"])
+            .AddCheck<PublisherOutboxHealthCheck>("publisher-outbox", tags: ["ready"]);
+
+        if (string.Equals(normalizedEventPublisherProvider, EventPublisherProviders.RabbitMq, StringComparison.OrdinalIgnoreCase) || enableRabbitMqResultConsumer)
+        {
+            healthChecks.AddCheck<RabbitMqQueuesHealthCheck>("rabbitmq-queues", tags: ["ready"]);
+        }
 
         if (nodeGatewayOptions.Enabled && nodeGatewayOptions.IncludeInReadiness)
         {

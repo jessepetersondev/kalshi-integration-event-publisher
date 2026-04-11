@@ -194,9 +194,13 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ClientOrderId")
+                        .IsUnique();
+
                     b.HasIndex("ExternalOrderId");
 
-                    b.HasIndex("TradeIntentId");
+                    b.HasIndex("TradeIntentId")
+                        .IsUnique();
 
                     b.ToTable("Orders", (string)null);
                 });
@@ -290,11 +294,115 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Migrations
                     b.ToTable("PositionSnapshots", (string)null);
                 });
 
+            modelBuilder.Entity("Kalshi.Integration.Infrastructure.Persistence.Entities.PublisherOutboxAttemptEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureKind")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId", "AttemptNumber")
+                        .IsUnique();
+
+                    b.ToTable("PublisherOutboxAttempts", (string)null);
+                });
+
+            modelBuilder.Entity("Kalshi.Integration.Infrastructure.Persistence.Entities.PublisherOutboxMessageEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AggregateType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastFailureKind")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcessorId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AggregateType", "AggregateId");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("PublisherOutboxMessages", (string)null);
+                });
+
             modelBuilder.Entity("Kalshi.Integration.Infrastructure.Persistence.Entities.ResultEventEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ApplyAttemptCount")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(128)
@@ -302,6 +410,13 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("IdempotencyKey")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastApplyAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
@@ -320,6 +435,8 @@ namespace Kalshi.Integration.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppliedAt");
 
                     b.HasIndex("OrderId");
 

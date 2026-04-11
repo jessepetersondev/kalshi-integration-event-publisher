@@ -12,4 +12,8 @@ public sealed class ResultEventEntity
     public string? IdempotencyKey { get; set; }
     public string PayloadJson { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }
+    public int ApplyAttemptCount { get; set; }
+    public DateTimeOffset? LastApplyAttemptAt { get; set; }
+    public DateTimeOffset? AppliedAt { get; set; }
+    public string? LastError { get; set; }
 }

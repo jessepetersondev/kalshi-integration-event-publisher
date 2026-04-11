@@ -2,15 +2,15 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using Kalshi.Integration.Application.Abstractions;
-using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Kalshi;
 using Kalshi.Integration.Contracts.Orders;
 using Kalshi.Integration.Contracts.TradeIntents;
 using Kalshi.Integration.Domain.Common;
-using Kalshi.Integration.Domain.Orders;
 using Kalshi.Integration.Domain.TradeIntents;
 using Kalshi.Integration.Infrastructure.Messaging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Kalshi.Integration.Infrastructure.Integrations.Kalshi;
@@ -32,7 +32,8 @@ public sealed class KalshiBridgeService
     private readonly IKalshiApiClient _kalshiApiClient;
     private readonly IOrderRepository _orderRepository;
     private readonly ITradeIntentRepository _tradeIntentRepository;
-    private readonly IApplicationEventPublisher _applicationEventPublisher;
+    private readonly OrderSubmissionService _orderSubmissionService;
+    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher;
     private readonly TradingService _tradingService;
     private readonly TradingQueryService _tradingQueryService;
     private readonly KalshiApiOptions _options;
@@ -43,7 +44,7 @@ public sealed class KalshiBridgeService
     /// <param name="kalshiApiClient">The direct Kalshi API client.</param>
     /// <param name="orderRepository">The repository used to find related cancel commands.</param>
     /// <param name="tradeIntentRepository">The repository used to find matching cancel trade-intents.</param>
-    /// <param name="applicationEventPublisher">The publisher used to emit order commands to RabbitMQ.</param>
+    /// <param name="applicationEventPublisher">The publisher used to emit order commands from the outbox dispatcher.</param>
     /// <param name="tradingService">The publisher trading workflow service.</param>
     /// <param name="tradingQueryService">The publisher trading query service.</param>
     /// <param name="options">The Kalshi bridge configuration.</param>
@@ -55,11 +56,53 @@ public sealed class KalshiBridgeService
         TradingService tradingService,
         TradingQueryService tradingQueryService,
         IOptions<KalshiApiOptions> options)
+        : this(
+            kalshiApiClient,
+            orderRepository,
+            tradeIntentRepository,
+            new OrderSubmissionService(
+                tradeIntentRepository,
+                orderRepository as IOrderCommandSubmissionStore ?? throw new InvalidOperationException("Order repository must support durable command submission."),
+                orderRepository),
+            new PublisherCommandOutboxDispatcher(
+                orderRepository as IPublisherCommandOutboxStore ?? throw new InvalidOperationException("Order repository must support durable outbox dispatch."),
+                applicationEventPublisher,
+                NullOperationalIssueStore.Instance,
+                Options.Create(new RabbitMqOptions()),
+                NullLogger<PublisherCommandOutboxDispatcher>.Instance),
+            tradingService,
+            tradingQueryService,
+            options)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KalshiBridgeService"/> class.
+    /// </summary>
+    /// <param name="kalshiApiClient">The direct Kalshi API client.</param>
+    /// <param name="orderRepository">The repository used to find related cancel commands.</param>
+    /// <param name="tradeIntentRepository">The repository used to find matching cancel trade-intents.</param>
+    /// <param name="orderSubmissionService">The service that persists orders and queues durable order commands.</param>
+    /// <param name="outboxDispatcher">The dispatcher used for best-effort immediate command publication.</param>
+    /// <param name="tradingService">The publisher trading workflow service.</param>
+    /// <param name="tradingQueryService">The publisher trading query service.</param>
+    /// <param name="options">The Kalshi bridge configuration.</param>
+    [ActivatorUtilitiesConstructor]
+    public KalshiBridgeService(
+        IKalshiApiClient kalshiApiClient,
+        IOrderRepository orderRepository,
+        ITradeIntentRepository tradeIntentRepository,
+        OrderSubmissionService orderSubmissionService,
+        PublisherCommandOutboxDispatcher outboxDispatcher,
+        TradingService tradingService,
+        TradingQueryService tradingQueryService,
+        IOptions<KalshiApiOptions> options)
     {
         _kalshiApiClient = kalshiApiClient;
         _orderRepository = orderRepository;
         _tradeIntentRepository = tradeIntentRepository;
-        _applicationEventPublisher = applicationEventPublisher;
+        _orderSubmissionService = orderSubmissionService;
+        _outboxDispatcher = outboxDispatcher;
         _tradingService = tradingService;
         _tradingQueryService = tradingQueryService;
         _options = options.Value;
@@ -101,8 +144,25 @@ public sealed class KalshiBridgeService
     public async Task<JsonNode> PlaceOrderAsync(SubmitKalshiOrderRequest request, CancellationToken cancellationToken = default)
     {
         var tradeIntent = await _tradingService.CreateTradeIntentAsync(BuildTradeIntentRequest(request), cancellationToken);
-        var order = await _tradingService.CreateOrderAsync(new CreateOrderRequest(tradeIntent.Id), cancellationToken);
-        order = await PublishOrderAsync(order, request, cancellationToken);
+        var order = await _orderSubmissionService.SubmitOrderAsync(
+            new CreateOrderRequest(tradeIntent.Id),
+            tradeIntent.CorrelationId,
+            tradeIntent.CorrelationId,
+            BuildCommandAttributes(request),
+            cancellationToken);
+
+        if (order.CommandEventId.HasValue)
+        {
+            try
+            {
+                await _outboxDispatcher.DispatchAsync(order.CommandEventId.Value, cancellationToken);
+            }
+            catch
+            {
+                // The durable outbox remains the source of truth.
+            }
+        }
+
         order = await WaitForOrderActivityAsync(order.Id, order.UpdatedAt, cancellationToken);
         return BuildBridgeOrderEnvelope(order);
     }
@@ -135,8 +195,25 @@ public sealed class KalshiBridgeService
         if (cancelOrder is null)
         {
             var cancelTradeIntent = await _tradingService.CreateTradeIntentAsync(BuildCancelTradeIntentRequest(order), cancellationToken);
-            cancelOrder = await _tradingService.CreateOrderAsync(new CreateOrderRequest(cancelTradeIntent.Id), cancellationToken);
-            cancelOrder = await PublishOrderAsync(cancelOrder, null, cancellationToken);
+            cancelOrder = await _orderSubmissionService.SubmitOrderAsync(
+                new CreateOrderRequest(cancelTradeIntent.Id),
+                cancelTradeIntent.CorrelationId,
+                cancelTradeIntent.CorrelationId,
+                additionalAttributes: null,
+                cancellationToken);
+
+            if (cancelOrder.CommandEventId.HasValue)
+            {
+                try
+                {
+                    await _outboxDispatcher.DispatchAsync(cancelOrder.CommandEventId.Value, cancellationToken);
+                }
+                catch
+                {
+                    // The durable outbox remains the source of truth.
+                }
+            }
+
             cancelOrder = await WaitForOrderActivityAsync(cancelOrder.Id, cancelOrder.UpdatedAt, cancellationToken);
         }
 
@@ -179,44 +256,30 @@ public sealed class KalshiBridgeService
             ?? throw new KeyNotFoundException($"Order '{publisherOrderId}' was not found.");
     }
 
-    private async Task<OrderResponse> PublishOrderAsync(
-        OrderResponse order,
-        SubmitKalshiOrderRequest? bridgeRequest,
-        CancellationToken cancellationToken)
+    private static Dictionary<string, string?>? BuildCommandAttributes(SubmitKalshiOrderRequest? bridgeRequest)
     {
-        var commandEvent = CreateOrderCommandEvent(order, bridgeRequest);
-        await _tradingService.MarkOrderPublishAttemptedAsync(order.Id, commandEvent.OccurredAt, cancellationToken);
-
-        try
+        if (bridgeRequest is null)
         {
-            await _applicationEventPublisher.PublishAsync(commandEvent, cancellationToken);
-            await _tradingService.MarkOrderPublishConfirmedAsync(order.Id, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
-        }
-        catch (PublishConfirmationException exception)
-        {
-            await _tradingService.MarkOrderPublishPendingReviewAsync(order.Id, exception.Message, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
+            return null;
         }
 
-        return await GetRequiredOrderAsync(order.Id, cancellationToken);
+        return new Dictionary<string, string?>
+        {
+            ["timeInForce"] = NormalizeTimeInForce(bridgeRequest.TimeInForce),
+            ["postOnly"] = bridgeRequest.PostOnly ? "true" : "false",
+            ["cancelOrderOnPause"] = bridgeRequest.CancelOrderOnPause ? "true" : "false",
+        };
     }
 
-    private static ApplicationEventEnvelope CreateOrderCommandEvent(OrderResponse order, SubmitKalshiOrderRequest? bridgeRequest)
+    private sealed class NullOperationalIssueStore : IOperationalIssueStore
     {
-        var attributes = new Dictionary<string, string?>(WeatherQuantCommandMapper.MapOrderAttributes(order));
-        if (bridgeRequest is not null)
-        {
-            attributes["timeInForce"] = NormalizeTimeInForce(bridgeRequest.TimeInForce);
-            attributes["postOnly"] = bridgeRequest.PostOnly ? "true" : "false";
-            attributes["cancelOrderOnPause"] = bridgeRequest.CancelOrderOnPause ? "true" : "false";
-        }
+        public static NullOperationalIssueStore Instance { get; } = new();
 
-        return ApplicationEventEnvelope.Create(
-            category: "trading",
-            name: "order.created",
-            resourceId: order.Id.ToString(),
-            correlationId: order.CorrelationId,
-            idempotencyKey: order.CorrelationId,
-            attributes: attributes);
+        public Task AddAsync(Application.Operations.OperationalIssue issue, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<Application.Operations.OperationalIssue>> GetRecentAsync(string? category = null, int hours = 24, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Application.Operations.OperationalIssue>>(Array.Empty<Application.Operations.OperationalIssue>());
     }
 
     private async Task<OrderResponse> WaitForOrderActivityAsync(Guid orderId, DateTimeOffset baselineUpdatedAt, CancellationToken cancellationToken)

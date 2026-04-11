@@ -145,6 +145,14 @@ public sealed class Order
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
 
+    public void MarkCommandQueued(Guid commandEventId, string? clientOrderId, DateTimeOffset? updatedAt = null)
+    {
+        PublishStatus = OrderPublishStatus.OrderCreated;
+        CommandEventId = commandEventId;
+        ClientOrderId = string.IsNullOrWhiteSpace(clientOrderId) ? ClientOrderId : clientOrderId.Trim();
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
     public void MarkPublishConfirmed(Guid commandEventId, DateTimeOffset? updatedAt = null)
     {
         PublishStatus = OrderPublishStatus.PublishConfirmed;
@@ -152,16 +160,32 @@ public sealed class Order
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
 
-    public void MarkPublishPendingReview(string? reason, Guid? commandEventId = null, DateTimeOffset? updatedAt = null)
+    public void MarkRetryScheduled(string? reason, Guid? commandEventId = null, DateTimeOffset? updatedAt = null)
     {
-        PublishStatus = OrderPublishStatus.PublishPendingReview;
+        PublishStatus = OrderPublishStatus.RetryScheduled;
         LastResultMessage = string.IsNullOrWhiteSpace(reason) ? LastResultMessage : reason.Trim();
         if (!CommandEventId.HasValue && commandEventId.HasValue)
         {
             CommandEventId = commandEventId.Value;
         }
+
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
+
+    public void MarkManualInterventionRequired(string? reason, Guid? commandEventId = null, DateTimeOffset? updatedAt = null)
+    {
+        PublishStatus = OrderPublishStatus.ManualInterventionRequired;
+        LastResultMessage = string.IsNullOrWhiteSpace(reason) ? LastResultMessage : reason.Trim();
+        if (!CommandEventId.HasValue && commandEventId.HasValue)
+        {
+            CommandEventId = commandEventId.Value;
+        }
+
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void MarkPublishPendingReview(string? reason, Guid? commandEventId = null, DateTimeOffset? updatedAt = null)
+        => MarkManualInterventionRequired(reason, commandEventId, updatedAt);
 
     public void ApplyResult(
         string resultStatus,

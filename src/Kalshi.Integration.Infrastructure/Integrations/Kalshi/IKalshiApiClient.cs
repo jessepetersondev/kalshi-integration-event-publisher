@@ -43,6 +43,11 @@ public interface IKalshiApiClient
     Task<JsonNode> GetOrderAsync(string externalOrderId, int subaccount, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the raw Kalshi orders payload for the supplied market and subaccount filter.
+    /// </summary>
+    Task<JsonNode> GetOrdersAsync(string? ticker, int subaccount, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cancels the raw Kalshi order payload for the supplied external order id.
     /// </summary>
     Task<JsonNode> CancelOrderAsync(string externalOrderId, int subaccount, CancellationToken cancellationToken = default);

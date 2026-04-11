@@ -157,7 +157,8 @@ public sealed class TradingQueryService
             OrderStatus.Settled => "settled",
             _ => order.PublishStatus switch
             {
-                OrderPublishStatus.PublishPendingReview => "pending_review",
+                OrderPublishStatus.ManualInterventionRequired => "manual_intervention_required",
+                OrderPublishStatus.RetryScheduled => "awaiting_publish_retry",
                 OrderPublishStatus.PublishConfirmed => "awaiting_result",
                 OrderPublishStatus.PublishAttempted => "awaiting_publish_confirmation",
                 OrderPublishStatus.Accepted or OrderPublishStatus.OrderCreated => "pending_submission",

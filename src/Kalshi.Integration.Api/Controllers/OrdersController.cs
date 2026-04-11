@@ -2,7 +2,6 @@ using System.Globalization;
 using Asp.Versioning;
 using Kalshi.Integration.Api.Infrastructure;
 using Kalshi.Integration.Application.Abstractions;
-using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
 using Kalshi.Integration.Contracts.Orders;
@@ -24,34 +23,34 @@ public sealed class OrdersController : ControllerBase
 {
     private const string IdempotencyScope = "orders";
 
-    private readonly TradingService _tradingService;
+    private readonly OrderSubmissionService _orderSubmissionService;
     private readonly TradingQueryService _tradingQueryService;
     private readonly IAuditRecordStore _auditRecordStore;
-    private readonly IApplicationEventPublisher _applicationEventPublisher;
+    private readonly PublisherCommandOutboxDispatcher _outboxDispatcher;
     private readonly IdempotencyService _idempotencyService;
     private readonly ILogger<OrdersController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrdersController"/> class.
     /// </summary>
-    /// <param name="tradingService">The service that creates orders.</param>
+    /// <param name="orderSubmissionService">The service that creates orders and queues durable order commands.</param>
     /// <param name="tradingQueryService">The service that reads order projections.</param>
     /// <param name="auditRecordStore">The store used to persist audit records.</param>
-    /// <param name="applicationEventPublisher">The publisher used to emit order events.</param>
+    /// <param name="outboxDispatcher">The dispatcher used for best-effort immediate outbox draining.</param>
     /// <param name="idempotencyService">The service used to detect duplicate order submissions.</param>
     /// <param name="logger">The logger for the controller.</param>
     public OrdersController(
-        TradingService tradingService,
+        OrderSubmissionService orderSubmissionService,
         TradingQueryService tradingQueryService,
         IAuditRecordStore auditRecordStore,
-        IApplicationEventPublisher applicationEventPublisher,
+        PublisherCommandOutboxDispatcher outboxDispatcher,
         IdempotencyService idempotencyService,
         ILogger<OrdersController> logger)
     {
-        _tradingService = tradingService;
+        _orderSubmissionService = orderSubmissionService;
         _tradingQueryService = tradingQueryService;
         _auditRecordStore = auditRecordStore;
-        _applicationEventPublisher = applicationEventPublisher;
+        _outboxDispatcher = outboxDispatcher;
         _idempotencyService = idempotencyService;
         _logger = logger;
     }
@@ -122,7 +121,7 @@ public sealed class OrdersController : ControllerBase
 
         try
         {
-            var response = await _tradingService.CreateOrderAsync(request, cancellationToken);
+            var response = await _orderSubmissionService.SubmitOrderAsync(request, correlationId, idempotencyKey, cancellationToken: cancellationToken);
             _logger.LogInformation("Created order {OrderId} for trade intent {TradeIntentId}.", response.Id, response.TradeIntentId);
 
             await _auditRecordStore.AddAsync(
@@ -136,21 +135,20 @@ public sealed class OrdersController : ControllerBase
                     details: $"tradeIntentId={response.TradeIntentId}; ticker={response.Ticker}; quantity={response.Quantity}; status={response.Status}"),
                 cancellationToken);
 
-            var commandEvent = WeatherQuantCommandMapper.CreateOrderEvent(response, correlationId, idempotencyKey);
-            await _tradingService.MarkOrderPublishAttemptedAsync(response.Id, commandEvent.OccurredAt, cancellationToken);
-
             try
             {
-                await _applicationEventPublisher.PublishAsync(commandEvent, cancellationToken);
-                await _tradingService.MarkOrderPublishConfirmedAsync(response.Id, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
+                if (response.CommandEventId.HasValue)
+                {
+                    await _outboxDispatcher.DispatchAsync(response.CommandEventId.Value, cancellationToken);
+                }
             }
-            catch (PublishConfirmationException exception)
+            catch (Exception exception)
             {
-                await _tradingService.MarkOrderPublishPendingReviewAsync(response.Id, exception.Message, commandEvent.Id, DateTimeOffset.UtcNow, cancellationToken);
+                _logger.LogWarning(exception, "Best-effort immediate dispatch failed for order command {CommandEventId}; background outbox retry will continue.", response.CommandEventId);
             }
 
-            await _idempotencyService.SaveResponseAsync(IdempotencyScope, idempotencyKey, request, StatusCodes.Status201Created, response, cancellationToken);
             var refreshed = await _tradingQueryService.GetOrderAsync(response.Id, cancellationToken) ?? response;
+            await _idempotencyService.SaveResponseAsync(IdempotencyScope, idempotencyKey, request, StatusCodes.Status201Created, refreshed, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = refreshed.Id, version = "1" }, refreshed);
         }
         catch (KeyNotFoundException exception)

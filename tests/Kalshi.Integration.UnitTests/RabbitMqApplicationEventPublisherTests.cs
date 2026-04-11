@@ -41,6 +41,36 @@ public sealed class RabbitMqApplicationEventPublisherTests
         model
             .Setup(x => x.ExchangeDeclare("kalshi.events", "topic", true, false, null));
         model
+            .Setup(x => x.QueueDeclare("kalshi.integration.executor.dlq", true, false, false, null))
+            .Returns((QueueDeclareOk)null!);
+        model
+            .Setup(x => x.QueueDeclare(
+                "kalshi.integration.executor",
+                true,
+                false,
+                false,
+                It.Is<Dictionary<string, object>>(args =>
+                    (string)args["x-dead-letter-exchange"] == string.Empty &&
+                    (string)args["x-dead-letter-routing-key"] == "kalshi.integration.executor.dlq")))
+            .Returns((QueueDeclareOk)null!);
+        model
+            .Setup(x => x.QueueBind("kalshi.integration.executor", "kalshi.events", "kalshi.integration.trading.#", null));
+        model
+            .Setup(x => x.QueueDeclare("kalshi.integration.event-publisher.results.dlq", true, false, false, null))
+            .Returns((QueueDeclareOk)null!);
+        model
+            .Setup(x => x.QueueDeclare(
+                "kalshi.integration.event-publisher.results",
+                true,
+                false,
+                false,
+                It.Is<Dictionary<string, object>>(args =>
+                    (string)args["x-dead-letter-exchange"] == string.Empty &&
+                    (string)args["x-dead-letter-routing-key"] == "kalshi.integration.event-publisher.results.dlq")))
+            .Returns((QueueDeclareOk)null!);
+        model
+            .Setup(x => x.QueueBind("kalshi.integration.event-publisher.results", "kalshi.events", "kalshi.integration.results.#", null));
+        model
             .Setup(x => x.ConfirmSelect());
         model
             .Setup(x => x.CreateBasicProperties())
@@ -49,7 +79,7 @@ public sealed class RabbitMqApplicationEventPublisherTests
             .Setup(x => x.BasicPublish(
                 "kalshi.events",
                 It.IsAny<string>(),
-                false,
+                true,
                 properties.Object,
                 It.IsAny<ReadOnlyMemory<byte>>()))
             .Callback((string _, string key, bool _, IBasicProperties _, ReadOnlyMemory<byte> body) =>
@@ -57,13 +87,19 @@ public sealed class RabbitMqApplicationEventPublisherTests
                 routingKey = key;
                 publishedBody = body.ToArray();
             });
+        var confirmTimedOut = false;
         model
-            .Setup(x => x.WaitForConfirms(It.IsAny<TimeSpan>()))
+            .Setup(x => x.WaitForConfirms(It.IsAny<TimeSpan>(), out confirmTimedOut))
             .Returns(true);
         model.Setup(x => x.Dispose());
         connection.Setup(x => x.Dispose());
 
-        var publisher = new RabbitMqApplicationEventPublisher(connectionFactory.Object, options, NullLogger<RabbitMqApplicationEventPublisher>.Instance);
+        var topologyBootstrapper = new RabbitMqTopologyBootstrapper(options);
+        var publisher = new RabbitMqApplicationEventPublisher(
+            connectionFactory.Object,
+            topologyBootstrapper,
+            options,
+            NullLogger<RabbitMqApplicationEventPublisher>.Instance);
         var applicationEvent = ApplicationEventEnvelope.Create(
             category: "trading",
             name: "order.created",

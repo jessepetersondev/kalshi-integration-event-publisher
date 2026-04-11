@@ -123,9 +123,9 @@ public sealed class OrderTests
 
         order.MarkPublishAttempted(createdAt);
         order.MarkPublishConfirmed(firstCommandEventId, createdAt.AddMinutes(1));
-        order.MarkPublishPendingReview("  pending broker confirmation  ", secondCommandEventId, createdAt.AddMinutes(2));
+        order.MarkManualInterventionRequired("  pending broker confirmation  ", secondCommandEventId, createdAt.AddMinutes(2));
 
-        Assert.Equal(OrderPublishStatus.PublishPendingReview, order.PublishStatus);
+        Assert.Equal(OrderPublishStatus.ManualInterventionRequired, order.PublishStatus);
         Assert.Equal(firstCommandEventId, order.CommandEventId);
         Assert.Equal("pending broker confirmation", order.LastResultMessage);
         Assert.Equal(createdAt.AddMinutes(2), order.UpdatedAt);

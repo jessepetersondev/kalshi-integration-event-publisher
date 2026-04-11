@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\Kalshi.Integration.Infrastructure\Kalshi.Integration.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Kalshi.Integration.Api\Kalshi.Integration.Api.csproj" />
     <ProjectReference Include="..\..\src\Kalshi.Integration.Contracts\Kalshi.Integration.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Kalshi.Integration.Executor\Kalshi.Integration.Executor.csproj" />
   </ItemGroup>
 
 </Project>

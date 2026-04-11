@@ -3,6 +3,7 @@ using Kalshi.Integration.Domain.Orders;
 using Kalshi.Integration.Domain.Positions;
 using Kalshi.Integration.Domain.TradeIntents;
 using Kalshi.Integration.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,17 @@ public sealed class EfTradingRepositoryTests
             .Options;
 
         return new KalshiIntegrationDbContext(options);
+    }
+
+    private static KalshiIntegrationDbContext CreateSqliteDbContext(SqliteConnection connection)
+    {
+        var options = new DbContextOptionsBuilder<KalshiIntegrationDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        var dbContext = new KalshiIntegrationDbContext(options);
+        dbContext.Database.EnsureCreated();
+        return dbContext;
     }
 
     [Fact]
@@ -53,5 +65,54 @@ public sealed class EfTradingRepositoryTests
         Assert.Contains(logger.Entries, entry =>
             entry.Level == LogLevel.Information
             && entry.Message.Contains("Dependency call database orders.get-by-id succeeded", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task FindMatchingCancelTradeIntentAsync_ShouldReturnLatestMatch_WithSqlite()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        var repository = new EfTradingRepository(dbContext, new TestLogger<EfTradingRepository>());
+
+        var targetPublisherOrderId = Guid.NewGuid();
+        var targetClientOrderId = "client-order-123";
+        var older = new TradeIntent(
+            "KXBTC-CANCEL-OLD",
+            side: null,
+            quantity: null,
+            limitPrice: null,
+            strategyName: "CancelOld",
+            actionType: TradeIntentActionType.Cancel,
+            originService: "kalshi-btc-quant",
+            decisionReason: "older cancel",
+            commandSchemaVersion: "kalshi-btc-quant.bridge.v1",
+            targetPublisherOrderId: targetPublisherOrderId,
+            targetClientOrderId: targetClientOrderId,
+            correlationId: "cancel-old",
+            createdAt: new DateTimeOffset(2026, 4, 10, 13, 30, 0, TimeSpan.Zero));
+        var newer = new TradeIntent(
+            "KXBTC-CANCEL-NEW",
+            side: null,
+            quantity: null,
+            limitPrice: null,
+            strategyName: "CancelNew",
+            actionType: TradeIntentActionType.Cancel,
+            originService: "kalshi-btc-quant",
+            decisionReason: "newer cancel",
+            commandSchemaVersion: "kalshi-btc-quant.bridge.v1",
+            targetPublisherOrderId: targetPublisherOrderId,
+            targetClientOrderId: targetClientOrderId,
+            correlationId: "cancel-new",
+            createdAt: new DateTimeOffset(2026, 4, 10, 13, 31, 0, TimeSpan.Zero));
+
+        await repository.AddTradeIntentAsync(older);
+        await repository.AddTradeIntentAsync(newer);
+
+        var result = await repository.FindMatchingCancelTradeIntentAsync(targetPublisherOrderId, targetClientOrderId, targetExternalOrderId: null);
+
+        Assert.NotNull(result);
+        Assert.Equal(newer.Id, result!.Id);
+        Assert.Equal("cancel-new", result.CorrelationId);
     }
 }

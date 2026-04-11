@@ -1,12 +1,13 @@
 # Kalshi Integration Event Publisher
 
-This repository contains the publisher/API side of the Kalshi integration sandbox:
+This repository contains the full Kalshi integration sandbox:
 
-- an ASP.NET Core / .NET 8 API that owns trade-intent, order, audit, issue, and dashboard state
+- an ASP.NET Core / .NET 8 publisher API that owns trade-intent, order, audit, issue, and dashboard state
+- an ASP.NET Core / .NET 8 executor service that consumes order commands, talks to Kalshi, and emits durable result/inbound/DLQ events
 - a small Node.js gateway used to simulate inbound execution webhooks
 - tests and Azure Pipelines validation for the .NET and Node surfaces
 
-This repo does not contain the downstream executor service. When RabbitMQ is enabled, this app can publish command events and consume executor result events, but the executor itself lives outside this repository.
+The publisher and executor now implement restart-safe outbox publication, replay-safe execution recovery, mandatory RabbitMQ routing protection, and automated repair loops for eventual consistency.
 
 ## Repository layout
 
@@ -16,6 +17,7 @@ src/
   Kalshi.Integration.Application/
   Kalshi.Integration.Contracts/
   Kalshi.Integration.Domain/
+  Kalshi.Integration.Executor/
   Kalshi.Integration.Infrastructure/
 
 tests/
@@ -33,12 +35,22 @@ docs/
 ## What the running application does
 
 - Accepts trade intents and applies configured risk checks before persisting them.
-- Creates publisher-owned orders from trade intents.
-- Publishes order command events through `IApplicationEventPublisher`.
+- Creates publisher-owned orders and persists outbound command messages in the same durable transaction.
+- Republishes pending publisher outbox commands with confirm-aware retries until they are broker-confirmed and routed.
+- Consumes order-created commands in the executor with a replay-safe duplicate guard before any live Kalshi side effect.
+- Emits executor result, inbound, and DLQ events through a durable executor outbox.
+- Repairs stuck outbox items and unapplied result projections automatically after process or broker interruption.
 - Accepts execution updates and applies legal order-state transitions.
 - Maintains order history, position snapshots, audit records, and operational issues.
 - Serves a static operator dashboard backed by `/api/v1/dashboard/*`.
 - Exposes a small Kalshi bridge for selected public-market reads and authenticated portfolio/order calls.
+
+## Reliability docs
+
+- `docs/event-publishing.md`
+- `docs/environment-configuration.md`
+- `docs/observability.md`
+- `docs/reliability-runbook.md`
 
 ## Runtime surface
 

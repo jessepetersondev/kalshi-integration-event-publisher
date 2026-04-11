@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 using Kalshi.Integration.Application.Abstractions;
 using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Risk;
@@ -23,6 +21,7 @@ public sealed class TradingService
     private readonly ITradeIntentRepository _tradeIntentRepository;
     private readonly IOrderRepository _orderRepository;
     private readonly IPositionSnapshotRepository _positionSnapshotRepository;
+    private readonly IExecutorResultProjectionStore _resultProjectionStore;
     private readonly RiskEvaluator _riskEvaluator;
 
     /// <summary>
@@ -37,11 +36,43 @@ public sealed class TradingService
         IOrderRepository orderRepository,
         IPositionSnapshotRepository positionSnapshotRepository,
         RiskEvaluator riskEvaluator)
+        : this(
+            tradeIntentRepository,
+            orderRepository,
+            positionSnapshotRepository,
+            orderRepository as IExecutorResultProjectionStore ?? UnsupportedResultProjectionStore.Instance,
+            riskEvaluator)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradingService"/> class.
+    /// </summary>
+    /// <param name="tradeIntentRepository">The repository used to persist trade intents.</param>
+    /// <param name="orderRepository">The repository used to persist orders and execution events.</param>
+    /// <param name="positionSnapshotRepository">The repository used to update position snapshots.</param>
+    /// <param name="resultProjectionStore">The store used to apply executor result projections transactionally.</param>
+    /// <param name="riskEvaluator">The risk evaluator applied before creating a trade intent.</param>
+    public TradingService(
+        ITradeIntentRepository tradeIntentRepository,
+        IOrderRepository orderRepository,
+        IPositionSnapshotRepository positionSnapshotRepository,
+        IExecutorResultProjectionStore resultProjectionStore,
+        RiskEvaluator riskEvaluator)
     {
         _tradeIntentRepository = tradeIntentRepository;
         _orderRepository = orderRepository;
         _positionSnapshotRepository = positionSnapshotRepository;
+        _resultProjectionStore = resultProjectionStore;
         _riskEvaluator = riskEvaluator;
+    }
+
+    private sealed class UnsupportedResultProjectionStore : IExecutorResultProjectionStore
+    {
+        public static UnsupportedResultProjectionStore Instance { get; } = new();
+
+        public Task<bool> ApplyExecutorResultAsync(ApplicationEventEnvelope resultEvent, ResultProjectionMutation mutation, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("The configured order repository does not support transactional executor result projection.");
     }
 
     public async Task<TradeIntentResponse> CreateTradeIntentAsync(CreateTradeIntentRequest request, CancellationToken cancellationToken = default)
@@ -146,36 +177,34 @@ public sealed class TradingService
         await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_confirmed", $"commandEventId={commandEventId}", at, cancellationToken);
     }
 
-    public async Task MarkOrderPublishPendingReviewAsync(Guid orderId, string reason, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+    public async Task MarkOrderRetryScheduledAsync(Guid orderId, string reason, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
     {
         var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken)
             ?? throw new KeyNotFoundException($"Order '{orderId}' was not found.");
 
         var at = occurredAt ?? DateTimeOffset.UtcNow;
-        order.MarkPublishPendingReview(reason, commandEventId, at);
+        order.MarkRetryScheduled(reason, commandEventId, at);
         await _orderRepository.UpdateOrderAsync(order, cancellationToken);
-        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_pending_review", reason, at, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "publish_retry_scheduled", reason, at, cancellationToken);
     }
+
+    public async Task MarkOrderManualInterventionRequiredAsync(Guid orderId, string reason, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+    {
+        var order = await _orderRepository.GetOrderAsync(orderId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Order '{orderId}' was not found.");
+
+        var at = occurredAt ?? DateTimeOffset.UtcNow;
+        order.MarkManualInterventionRequired(reason, commandEventId, at);
+        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
+        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, "manual_intervention_required", reason, at, cancellationToken);
+    }
+
+    public Task MarkOrderPublishPendingReviewAsync(Guid orderId, string reason, Guid commandEventId, DateTimeOffset? occurredAt = null, CancellationToken cancellationToken = default)
+        => MarkOrderManualInterventionRequiredAsync(orderId, reason, commandEventId, occurredAt, cancellationToken);
 
     public async Task<bool> ApplyExecutorResultAsync(ApplicationEventEnvelope resultEvent, CancellationToken cancellationToken = default)
     {
-        var payloadJson = JsonSerializer.Serialize(resultEvent);
         var orderId = ResolveOrderId(resultEvent);
-        var recorded = await _orderRepository.TryAddResultEventAsync(
-            resultEvent.Id,
-            orderId,
-            resultEvent.Name,
-            resultEvent.CorrelationId,
-            resultEvent.IdempotencyKey,
-            payloadJson,
-            resultEvent.OccurredAt,
-            cancellationToken);
-
-        if (!recorded)
-        {
-            return false;
-        }
-
         if (!orderId.HasValue)
         {
             throw new DomainException("Result event is missing publisher order identity.");
@@ -184,7 +213,6 @@ public sealed class TradingService
         var order = await _orderRepository.GetOrderAsync(orderId.Value, cancellationToken)
             ?? throw new KeyNotFoundException($"Order '{orderId.Value}' was not found.");
 
-        var previousStatus = order.CurrentStatus;
         var mappedStatus = MapResultToOrderStatus(resultEvent, order);
         var filledQuantity = TryGetInt(resultEvent.Attributes, "filledQuantity")
             ?? InferFilledQuantity(resultEvent, order, mappedStatus)
@@ -192,41 +220,19 @@ public sealed class TradingService
         var details = TryGetString(resultEvent.Attributes, "blockReason")
             ?? TryGetString(resultEvent.Attributes, "errorMessage")
             ?? TryGetString(resultEvent.Attributes, "deadLetterQueue");
-
-        order.ApplyResult(
-            resultEvent.Name,
-            nextStatus: mappedStatus,
-            filledQuantity: filledQuantity,
-            lastResultMessage: details,
-            externalOrderId: TryGetString(resultEvent.Attributes, "externalOrderId"),
-            clientOrderId: TryGetString(resultEvent.Attributes, "clientOrderId"),
-            commandEventId: TryGetGuid(resultEvent.Attributes, "commandEventId") ?? order.CommandEventId,
-            updatedAt: resultEvent.OccurredAt);
-
-        await _orderRepository.UpdateOrderAsync(order, cancellationToken);
-        await _orderRepository.AddOrderLifecycleEventAsync(order.Id, resultEvent.Name, details, resultEvent.OccurredAt, cancellationToken);
-
-        if (mappedStatus.HasValue && mappedStatus.Value != previousStatus)
-        {
-            await _orderRepository.AddOrderEventAsync(new ExecutionEvent(order.Id, mappedStatus.Value, order.FilledQuantity, resultEvent.OccurredAt), cancellationToken);
-        }
-
-        if (mappedStatus is OrderStatus.Accepted or OrderStatus.Resting or OrderStatus.PartiallyFilled or OrderStatus.Filled)
-        {
-            if (order.TradeIntent.Side.HasValue && order.TradeIntent.LimitPrice.HasValue)
-            {
-                await _positionSnapshotRepository.UpsertPositionSnapshotAsync(
-                    new PositionSnapshot(
-                        order.TradeIntent.Ticker,
-                        order.TradeIntent.Side.Value,
-                        order.FilledQuantity,
-                        order.TradeIntent.LimitPrice.Value,
-                        resultEvent.OccurredAt),
-                    cancellationToken);
-            }
-        }
-
-        return true;
+        return await _resultProjectionStore.ApplyExecutorResultAsync(
+            resultEvent,
+            new ResultProjectionMutation(
+                orderId.Value,
+                resultEvent.Name,
+                mappedStatus,
+                filledQuantity,
+                details,
+                TryGetString(resultEvent.Attributes, "externalOrderId"),
+                TryGetString(resultEvent.Attributes, "clientOrderId"),
+                TryGetGuid(resultEvent.Attributes, "commandEventId") ?? order.CommandEventId,
+                mappedStatus is OrderStatus.Accepted or OrderStatus.Resting or OrderStatus.PartiallyFilled or OrderStatus.Filled),
+            cancellationToken);
     }
 
     public async Task<ExecutionUpdateResult> ApplyExecutionUpdateAsync(ExecutionUpdateRequest request, CancellationToken cancellationToken = default)

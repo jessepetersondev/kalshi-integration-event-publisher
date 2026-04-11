@@ -91,7 +91,7 @@ public sealed class KalshiBridgeServiceTests
         Assert.Equal("pending", order!.Status);
         Assert.Equal("publishconfirmed", order.PublishStatus);
         Assert.Null(order.ExternalOrderId);
-        Assert.Null(order.ClientOrderId);
+        Assert.Equal("client-1", order.ClientOrderId);
 
         var tradeIntent = await repository.GetTradeIntentByCorrelationIdAsync("client-1");
         Assert.NotNull(tradeIntent);
@@ -116,7 +116,7 @@ public sealed class KalshiBridgeServiceTests
     }
 
     [Fact]
-    public async Task PlaceOrderAsync_ShouldMarkOrderPendingReviewWhenPublishConfirmationFails()
+    public async Task PlaceOrderAsync_ShouldScheduleRetryWhenPublishConfirmationFails()
     {
         var publisher = new Mock<IApplicationEventPublisher>(MockBehavior.Strict);
         publisher
@@ -131,7 +131,7 @@ public sealed class KalshiBridgeServiceTests
 
         Assert.NotNull(order);
         Assert.Equal("pending", order!.Status);
-        Assert.Equal("publishpendingreview", order.PublishStatus);
+        Assert.Equal("retryscheduled", order.PublishStatus);
         Assert.Equal("publisher unavailable", order.LastResultMessage);
         publisher.VerifyAll();
         apiClient.VerifyNoOtherCalls();
@@ -256,7 +256,7 @@ public sealed class KalshiBridgeServiceTests
     }
 
     [Fact]
-    public async Task CancelOrderAsync_ShouldReuseCancelOrderWhenPublishConfirmationIsPendingReview()
+    public async Task CancelOrderAsync_ShouldReuseCancelOrderWhenPublishConfirmationIsRetryScheduled()
     {
         var publisher = new Mock<IApplicationEventPublisher>(MockBehavior.Strict);
         publisher
@@ -280,7 +280,7 @@ public sealed class KalshiBridgeServiceTests
         var cancelProjection = await queryService.GetOrderAsync(cancelOrder.Id);
 
         Assert.NotNull(cancelProjection);
-        Assert.Equal("publishpendingreview", cancelProjection!.PublishStatus);
+        Assert.Equal("retryscheduled", cancelProjection!.PublishStatus);
         Assert.Equal("broker confirmation pending", cancelProjection.LastResultMessage);
         publisher.Verify(x => x.PublishAsync(It.IsAny<ApplicationEventEnvelope>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         apiClient.VerifyNoOtherCalls();

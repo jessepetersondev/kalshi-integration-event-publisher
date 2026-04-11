@@ -2,9 +2,11 @@ using System.Text;
 using System.Text.Json;
 using Kalshi.Integration.Application.Abstractions;
 using Kalshi.Integration.Application.Events;
+using Kalshi.Integration.Contracts.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
 
 namespace Kalshi.Integration.Infrastructure.Messaging;
@@ -17,15 +19,18 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IConnectionFactory _connectionFactory;
+    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper;
     private readonly ILogger<RabbitMqApplicationEventPublisher> _logger;
     private readonly RabbitMqOptions _options;
 
     public RabbitMqApplicationEventPublisher(
         IConnectionFactory connectionFactory,
+        RabbitMqTopologyBootstrapper topologyBootstrapper,
         IOptions<RabbitMqOptions> options,
         ILogger<RabbitMqApplicationEventPublisher> logger)
     {
         _connectionFactory = connectionFactory;
+        _topologyBootstrapper = topologyBootstrapper;
         _logger = logger;
         _options = options.Value;
     }
@@ -50,14 +55,10 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
                 using var connection = _connectionFactory.CreateConnection(_options.ClientProvidedName);
                 using var channel = connection.CreateModel();
 
-                channel.ExchangeDeclare(
-                    exchange: _options.Exchange,
-                    type: _options.ExchangeType,
-                    durable: true,
-                    autoDelete: false,
-                    arguments: null);
-
+                _topologyBootstrapper.EnsureTopology(channel);
                 channel.ConfirmSelect();
+                BasicReturnEventArgs? returnedMessage = null;
+                channel.BasicReturn += (_, args) => returnedMessage = args;
 
                 var properties = channel.CreateBasicProperties();
                 properties.AppId = _options.ClientProvidedName;
@@ -72,14 +73,36 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
                 channel.BasicPublish(
                     exchange: _options.Exchange,
                     routingKey: routingKey,
-                    mandatory: _options.Mandatory,
+                    mandatory: true,
                     basicProperties: properties,
                     body: body);
 
-                if (!channel.WaitForConfirms(TimeSpan.FromMilliseconds(_options.PublishConfirmTimeoutMilliseconds)))
+                var confirmed = channel.WaitForConfirms(
+                    TimeSpan.FromMilliseconds(_options.PublishConfirmTimeoutMilliseconds),
+                    out var timedOut);
+
+                if (timedOut)
                 {
                     throw new PublishConfirmationException(
-                        $"RabbitMQ did not confirm publication of event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.");
+                        $"RabbitMQ did not confirm publication of event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.",
+                        RabbitMqPublishFailureKind.ConfirmTimeout,
+                        isRetryable: true);
+                }
+
+                if (!confirmed)
+                {
+                    throw new PublishConfirmationException(
+                        $"RabbitMQ negatively acknowledged publication of event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.",
+                        RabbitMqPublishFailureKind.Nack,
+                        isRetryable: true);
+                }
+
+                if (returnedMessage is not null)
+                {
+                    throw new PublishConfirmationException(
+                        $"RabbitMQ returned unroutable event '{applicationEvent.Name}' with id '{applicationEvent.Id}' for routing key '{returnedMessage.RoutingKey}'.",
+                        RabbitMqPublishFailureKind.Unroutable,
+                        isRetryable: true);
                 }
 
                 _logger.LogInformation(
@@ -93,15 +116,18 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
             catch (Exception exception) when (attempt < maxAttempts && IsRetryable(exception))
             {
                 lastException = exception;
+                RecordPublishFailure(ClassifyFailure(exception));
                 Thread.Sleep(TimeSpan.FromMilliseconds(_options.PublishRetryDelayMilliseconds * attempt));
             }
-            catch (PublishConfirmationException)
+            catch (PublishConfirmationException exception)
             {
+                RecordPublishFailure(exception.FailureKind);
                 throw;
             }
             catch (Exception exception)
             {
                 lastException = exception;
+                RecordPublishFailure(ClassifyFailure(exception));
                 break;
             }
         }
@@ -110,6 +136,8 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
             ? publishConfirmationException
             : new PublishConfirmationException(
                 $"RabbitMQ publication could not be confirmed for event '{applicationEvent.Name}' with id '{applicationEvent.Id}'.",
+                ClassifyFailure(lastException),
+                IsRetryable(lastException ?? new InvalidOperationException("RabbitMQ publication failed without an inner exception.")),
                 lastException);
     }
 
@@ -161,5 +189,39 @@ public sealed class RabbitMqApplicationEventPublisher : IApplicationEventPublish
     }
 
     private static bool IsRetryable(Exception exception)
-        => exception is BrokerUnreachableException or OperationInterruptedException or AlreadyClosedException or IOException or TimeoutException;
+        => exception switch
+        {
+            PublishConfirmationException publishFailure => publishFailure.IsRetryable,
+            OperationInterruptedException interrupted when IsPermanentBrokerConfiguration(interrupted) => false,
+            _ => exception is BrokerUnreachableException or OperationInterruptedException or AlreadyClosedException or IOException or TimeoutException,
+        };
+
+    private static RabbitMqPublishFailureKind ClassifyFailure(Exception? exception)
+    {
+        return exception switch
+        {
+            PublishConfirmationException publishFailure => publishFailure.FailureKind,
+            BrokerUnreachableException => RabbitMqPublishFailureKind.BrokerUnavailable,
+            AlreadyClosedException => RabbitMqPublishFailureKind.ChannelClosed,
+            TimeoutException => RabbitMqPublishFailureKind.ConfirmTimeout,
+            OperationInterruptedException interrupted when IsPermanentBrokerConfiguration(interrupted) => RabbitMqPublishFailureKind.Configuration,
+            OperationInterruptedException => RabbitMqPublishFailureKind.ConnectionInterrupted,
+            IOException => RabbitMqPublishFailureKind.ConnectionInterrupted,
+            _ => RabbitMqPublishFailureKind.Unknown,
+        };
+    }
+
+    private static bool IsPermanentBrokerConfiguration(OperationInterruptedException exception)
+    {
+        var replyCode = exception.ShutdownReason?.ReplyCode ?? 0;
+        return replyCode is 403 or 404;
+    }
+
+    private void RecordPublishFailure(RabbitMqPublishFailureKind failureKind)
+    {
+        KalshiTelemetry.RabbitMqPublishFailuresTotal.Add(
+            1,
+            new KeyValuePair<string, object?>("component", _options.ClientProvidedName),
+            new KeyValuePair<string, object?>("failure_kind", failureKind.ToString().ToLowerInvariant()));
+    }
 }

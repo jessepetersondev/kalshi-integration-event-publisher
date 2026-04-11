@@ -30,13 +30,13 @@ public sealed class TradingServiceResultProjectionTests
 
         await service.MarkOrderPublishAttemptedAsync(order.Id, attemptedAt);
         await service.MarkOrderPublishConfirmedAsync(order.Id, firstCommandEventId, confirmedAt);
-        await service.MarkOrderPublishPendingReviewAsync(order.Id, " awaiting broker confirm ", secondCommandEventId, reviewAt);
+        await service.MarkOrderManualInterventionRequiredAsync(order.Id, " awaiting broker confirm ", secondCommandEventId, reviewAt);
 
         var persistedOrder = await repository.GetOrderAsync(order.Id);
         var lifecycleEvents = await repository.GetOrderLifecycleEventsAsync(order.Id);
 
         Assert.NotNull(persistedOrder);
-        Assert.Equal(OrderPublishStatus.PublishPendingReview, persistedOrder!.PublishStatus);
+        Assert.Equal(OrderPublishStatus.ManualInterventionRequired, persistedOrder!.PublishStatus);
         Assert.Equal(firstCommandEventId, persistedOrder.CommandEventId);
         Assert.Equal("awaiting broker confirm", persistedOrder.LastResultMessage);
         Assert.Equal(reviewAt, persistedOrder.UpdatedAt);
@@ -50,7 +50,7 @@ public sealed class TradingServiceResultProjectionTests
             },
             evt =>
             {
-                Assert.Equal("publish_pending_review", evt.Stage);
+                Assert.Equal("manual_intervention_required", evt.Stage);
                 Assert.Equal(" awaiting broker confirm ", evt.Details);
             });
     }

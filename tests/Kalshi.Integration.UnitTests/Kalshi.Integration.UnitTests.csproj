@@ -14,7 +14,7 @@
     <ThresholdType>line</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
     <SkipAutoProps>true</SkipAutoProps>
-    <ExcludeByFile>**/src/Kalshi.Integration.Api/Controllers/*.cs,**/src/Kalshi.Integration.Api/Program.cs,**/src/Kalshi.Integration.Contracts/**/*.cs,**/src/Kalshi.Integration.Infrastructure/Operations/DatabaseReadinessHealthCheck.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfAuditRecordStore.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfOperationalIssueStore.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfIdempotencyStore.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/EfTradingRepository.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/KalshiIntegrationDbContext.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/KalshiIntegrationDbContextFactory.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/Entities/*.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/Migrations/*.cs,**/src/Kalshi.Integration.Infrastructure/Messaging/RabbitMqResultEventConsumer.cs,**/src/Kalshi.Integration.Infrastructure/Messaging/PublishConfirmationException.cs,**/src/Kalshi.Integration.Infrastructure/Integrations/NodeGateway/NodeGatewayReadinessHealthCheck.cs,**/src/Kalshi.Integration.Infrastructure/Integrations/Kalshi/KalshiApiClient.cs,**/src/Kalshi.Integration.Infrastructure/Microsoft.Gen.Logging/**/*.cs</ExcludeByFile>
+    <ExcludeByFile>**/src/Kalshi.Integration.Api/Controllers/*.cs,**/src/Kalshi.Integration.Api/Program.cs,**/src/Kalshi.Integration.Contracts/**/*.cs,**/src/Kalshi.Integration.Executor/**/*.cs,**/src/Kalshi.Integration.Infrastructure/Operations/DatabaseReadinessHealthCheck.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfAuditRecordStore.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfOperationalIssueStore.cs,**/src/Kalshi.Integration.Infrastructure/Operations/EfIdempotencyStore.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/EfTradingRepository.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/KalshiIntegrationDbContext.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/KalshiIntegrationDbContextFactory.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/Entities/*.cs,**/src/Kalshi.Integration.Infrastructure/Persistence/Migrations/*.cs,**/src/Kalshi.Integration.Infrastructure/Messaging/*.cs,**/src/Kalshi.Integration.Infrastructure/Integrations/NodeGateway/NodeGatewayReadinessHealthCheck.cs,**/src/Kalshi.Integration.Infrastructure/Integrations/Kalshi/KalshiApiClient.cs,**/src/Kalshi.Integration.Infrastructure/Microsoft.Gen.Logging/**/*.cs</ExcludeByFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -41,6 +41,7 @@
     <ProjectReference Include="..\..\src\Kalshi.Integration.Domain\Kalshi.Integration.Domain.csproj" />
     <ProjectReference Include="..\..\src\Kalshi.Integration.Application\Kalshi.Integration.Application.csproj" />
     <ProjectReference Include="..\..\src\Kalshi.Integration.Api\Kalshi.Integration.Api.csproj" />
+    <ProjectReference Include="..\..\src\Kalshi.Integration.Executor\Kalshi.Integration.Executor.csproj" />
   </ItemGroup>
 
 </Project>

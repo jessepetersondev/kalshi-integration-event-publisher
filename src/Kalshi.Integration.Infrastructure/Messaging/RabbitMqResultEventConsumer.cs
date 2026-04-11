@@ -4,6 +4,7 @@ using Kalshi.Integration.Application.Abstractions;
 using Kalshi.Integration.Application.Events;
 using Kalshi.Integration.Application.Operations;
 using Kalshi.Integration.Application.Trading;
+using Kalshi.Integration.Contracts.Diagnostics;
 using Kalshi.Integration.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,17 +24,20 @@ public sealed class RabbitMqResultEventConsumer : BackgroundService
 
     private readonly IConnectionFactory _connectionFactory;
     private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly RabbitMqTopologyBootstrapper _topologyBootstrapper;
     private readonly ILogger<RabbitMqResultEventConsumer> _logger;
     private readonly RabbitMqOptions _options;
 
     public RabbitMqResultEventConsumer(
         IConnectionFactory connectionFactory,
         IServiceScopeFactory serviceScopeFactory,
+        RabbitMqTopologyBootstrapper topologyBootstrapper,
         IOptions<RabbitMqOptions> options,
         ILogger<RabbitMqResultEventConsumer> logger)
     {
         _connectionFactory = connectionFactory;
         _serviceScopeFactory = serviceScopeFactory;
+        _topologyBootstrapper = topologyBootstrapper;
         _logger = logger;
         _options = options.Value;
     }
@@ -69,55 +73,58 @@ public sealed class RabbitMqResultEventConsumer : BackgroundService
             return;
         }
 
-        using var connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.results");
-        using var channel = connection.CreateModel();
-
-        channel.ExchangeDeclare(_options.Exchange, _options.ExchangeType, durable: true, autoDelete: false, arguments: null);
-        channel.QueueDeclare(
-            queue: _options.PublisherResultsDeadLetterQueue,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null);
-        channel.QueueDeclare(
-            queue: _options.PublisherResultsQueue,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            arguments: new Dictionary<string, object>
-            {
-                ["x-dead-letter-exchange"] = string.Empty,
-                ["x-dead-letter-routing-key"] = _options.PublisherResultsDeadLetterQueue,
-            });
-        channel.QueueBind(_options.PublisherResultsQueue, _options.Exchange, _options.ResultsRoutingKeyBinding);
-        channel.BasicQos(0, 1, false);
-
-        var consumer = new AsyncEventingBasicConsumer(channel);
-        consumer.Received += async (_, args) =>
+        while (!stoppingToken.IsCancellationRequested)
         {
-            var payload = Encoding.UTF8.GetString(args.Body.ToArray());
-
             try
             {
-                await HandlePayloadAsync(payload, stoppingToken);
-                channel.BasicAck(args.DeliveryTag, multiple: false);
+                using var connection = _connectionFactory.CreateConnection($"{_options.ClientProvidedName}.results");
+                using var channel = connection.CreateModel();
+
+                _topologyBootstrapper.EnsureTopology(channel);
+                channel.BasicQos(0, 1, false);
+
+                var consumer = new AsyncEventingBasicConsumer(channel);
+                consumer.Received += async (_, args) =>
+                {
+                    var payload = Encoding.UTF8.GetString(args.Body.ToArray());
+
+                    try
+                    {
+                        await HandlePayloadAsync(payload, stoppingToken);
+                        channel.BasicAck(args.DeliveryTag, multiple: false);
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.LogError(exception, "Failed to consume result event from queue {Queue}.", _options.PublisherResultsQueue);
+                        channel.BasicNack(args.DeliveryTag, multiple: false, requeue: false);
+                    }
+                };
+
+                channel.BasicConsume(_options.PublisherResultsQueue, autoAck: false, consumer: consumer);
+                await Task.Delay(Timeout.Infinite, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception exception)
             {
-                _logger.LogError(exception, "Failed to consume result event from queue {Queue}.", _options.PublisherResultsQueue);
-                channel.BasicNack(args.DeliveryTag, multiple: false, requeue: false);
+                KalshiTelemetry.RabbitMqReconnectFailuresTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>("component", "publisher"));
+
+                await RecordIssueAsync(
+                    "result-consumer",
+                    $"Result consumer failed to connect to RabbitMQ queue '{_options.PublisherResultsQueue}'.",
+                    exception.Message,
+                    stoppingToken);
+                _logger.LogError(
+                    exception,
+                    "Result consumer connection failed. Retrying queue {Queue} in {DelaySeconds} seconds.",
+                    _options.PublisherResultsQueue,
+                    _options.ConsumerRecoveryDelaySeconds);
+                await Task.Delay(TimeSpan.FromSeconds(_options.ConsumerRecoveryDelaySeconds), stoppingToken);
             }
-        };
-
-        channel.BasicConsume(_options.PublisherResultsQueue, autoAck: false, consumer: consumer);
-
-        try
-        {
-            await Task.Delay(Timeout.Infinite, stoppingToken);
-        }
-        catch (TaskCanceledException)
-        {
-            // Normal shutdown.
         }
     }
 
